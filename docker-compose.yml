@@ -4,9 +4,9 @@ services:
     container_name: budget_db
     restart: always
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: budget_db
+      POSTGRES_USER:     ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB:       ${POSTGRES_DB:-budget_db}
     ports:
       - "5432:5432"
     volumes:
@@ -20,7 +20,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/budget_db
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-budget_db}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-change-in-production}
     depends_on:
       - db
 
