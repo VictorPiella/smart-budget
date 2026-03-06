@@ -1,0 +1,13 @@
+# Ensure consistent LF line endings in the repo (Docker/Linux requires LF)
+* text=auto eol=lf
+
+# Explicitly binary files — no line-ending conversion
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary

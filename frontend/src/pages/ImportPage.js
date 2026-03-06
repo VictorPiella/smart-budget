@@ -1,0 +1,384 @@
+import React, { useEffect, useState } from "react";
+import api from "../api";
+import { useAccounts } from "../context/AccountContext";
+
+export default function ImportPage() {
+  const { accounts, selectedAccount, setSelectedAccount, fetchAccounts } = useAccounts();
+  const [mode, setMode] = useState("file");
+  const [file, setFile] = useState(null);
+  const [rawCsv, setRawCsv] = useState("");
+
+  // Step 1: preview
+  const [preview, setPreview] = useState(null); // { headers, sample_rows, detected_* }
+  const [previewing, setPreviewing] = useState(false);
+
+  // Step 2: column mapping
+  const [mapping, setMapping] = useState({ date: "", desc: "", amount: "", extra: [] });
+
+  // Step 3: result
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [remapping, setRemapping] = useState(false);
+
+  useEffect(() => { fetchAccounts(); }, []);
+
+  // Reset when account/mode changes
+  useEffect(() => { setPreview(null); setResult(null); setError(""); }, [selectedAccount, mode]);
+
+  const buildForm = () => {
+    const form = new FormData();
+    if (mode === "file" && file) form.append("file", file);
+    else if (mode === "paste") form.append("raw_csv", rawCsv);
+    return form;
+  };
+
+  const handlePreview = async (e) => {
+    e.preventDefault();
+    if (!selectedAccount) return;
+    setError("");
+    setResult(null);
+    setPreview(null);
+    setPreviewing(true);
+    try {
+      const { data } = await api.post(`/accounts/${selectedAccount.id}/import/preview`, buildForm());
+      setPreview(data);
+      setMapping({
+        date:   data.detected_date_col   || "",
+        desc:   data.detected_desc_col   || "",
+        amount: data.detected_amount_col || "",
+        extra:  [],
+      });
+    } catch (err) {
+      setError(err.response?.data?.detail || "Could not parse file.");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!selectedAccount || !preview) return;
+    setError("");
+    setImporting(true);
+    try {
+      const form = buildForm();
+      form.append("col_date",        mapping.date);
+      form.append("col_desc",        mapping.desc);
+      form.append("col_amount",      mapping.amount);
+      form.append("col_extra_desc",  JSON.stringify(mapping.extra));
+      const { data } = await api.post(`/accounts/${selectedAccount.id}/import`, form);
+      setResult(data);
+      setPreview(null);
+      fetchAccounts();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Import failed.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleRemap = async () => {
+    if (!selectedAccount) return;
+    setRemapping(true);
+    try {
+      const { data } = await api.post(`/accounts/${selectedAccount.id}/remap`);
+      alert(`Remap complete: ${data.remapped} of ${data.total} transactions updated.`);
+    } catch {
+      alert("Remap failed.");
+    } finally {
+      setRemapping(false);
+    }
+  };
+
+  const toggleExtra = (col) => {
+    setMapping((m) => ({
+      ...m,
+      extra: m.extra.includes(col) ? m.extra.filter((c) => c !== col) : [...m.extra, col],
+    }));
+  };
+
+  const canImport = mapping.date && mapping.desc && mapping.amount;
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">Smart Import</h1>
+
+      {/* ── Step 1: file / paste ── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-indigo-400 bg-indigo-900/40 rounded-full w-5 h-5 flex items-center justify-center">1</span>
+          <span className="text-sm font-semibold text-gray-300">Upload or paste your bank export</span>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-400 uppercase tracking-wide">Target Account</label>
+          <select
+            value={selectedAccount?.id || ""}
+            onChange={(e) => setSelectedAccount(accounts.find((a) => a.id === e.target.value) || null)}
+            className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+            {accounts.length === 0 && <option value="">No accounts — create one first</option>}
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex gap-2">
+          {["file", "paste"].map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
+                mode === m ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"
+              }`}
+            >
+              {m === "file" ? "File Upload" : "Paste CSV"}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={handlePreview} className="space-y-4">
+          {mode === "file" ? (
+            <div>
+              <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">CSV File</label>
+              <input
+                type="file"
+                accept=".csv,.tsv,text/csv,text/plain"
+                onChange={(e) => { setFile(e.target.files[0]); setPreview(null); setResult(null); }}
+                required
+                className="block w-full text-sm text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-indigo-700 file:text-white file:text-sm hover:file:bg-indigo-600 cursor-pointer"
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Paste Bank Data</label>
+              <textarea
+                value={rawCsv}
+                onChange={(e) => { setRawCsv(e.target.value); setPreview(null); setResult(null); }}
+                rows={8}
+                placeholder={"Paste directly from your bank export.\nTab, comma, and semicolon separators are all supported."}
+                required
+                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-y"
+              />
+            </div>
+          )}
+
+          {error && !preview && (
+            <div className="bg-red-900/40 border border-red-700 text-red-300 text-sm rounded px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={previewing || !selectedAccount}
+            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
+          >
+            {previewing ? "Analysing..." : "Analyse File →"}
+          </button>
+        </form>
+      </div>
+
+      {/* ── Step 2: column mapper ── */}
+      {preview && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-indigo-400 bg-indigo-900/40 rounded-full w-5 h-5 flex items-center justify-center">2</span>
+            <span className="text-sm font-semibold text-gray-300">Map columns</span>
+            <span className="text-xs text-gray-500 ml-1">— {preview.headers.length} columns detected</span>
+          </div>
+
+          {/* Column mapping selects */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              { key: "date",   label: "Date column",        required: true },
+              { key: "desc",   label: "Description column", required: true },
+              { key: "amount", label: "Amount column",      required: true },
+            ].map(({ key, label }) => (
+              <div key={key} className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400">{label}</label>
+                <select
+                  value={mapping[key]}
+                  onChange={(e) => setMapping((m) => ({ ...m, [key]: e.target.value }))}
+                  className={`bg-gray-800 border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+                    mapping[key] ? "border-gray-700" : "border-yellow-600"
+                  }`}
+                >
+                  <option value="">— select —</option>
+                  {preview.headers.map((h) => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          {/* Extra description columns */}
+          <div>
+            <p className="text-xs text-gray-400 mb-2">Extra columns to merge into description (optional)</p>
+            <div className="flex flex-wrap gap-2">
+              {preview.headers
+                .filter((h) => h !== mapping.date && h !== mapping.amount)
+                .map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => toggleExtra(h)}
+                    className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+                      mapping.extra.includes(h)
+                        ? "bg-indigo-700 border-indigo-500 text-white"
+                        : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500"
+                    }`}
+                  >
+                    {h}
+                  </button>
+                ))}
+            </div>
+          </div>
+
+          {/* Sample data preview */}
+          <div>
+            <p className="text-xs text-gray-400 mb-2">Sample rows ({preview.sample_rows.length})</p>
+            <div className="overflow-x-auto rounded border border-gray-800">
+              <table className="w-full text-xs min-w-max">
+                <thead>
+                  <tr className="bg-gray-800">
+                    {preview.headers.map((h) => (
+                      <th
+                        key={h}
+                        className={`text-left px-3 py-2 font-medium whitespace-nowrap ${
+                          [mapping.date, mapping.desc, mapping.amount].includes(h)
+                            ? "text-indigo-300"
+                            : mapping.extra.includes(h)
+                            ? "text-yellow-300"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        {h}
+                        {mapping.date === h && <span className="ml-1 text-indigo-400">(date)</span>}
+                        {mapping.desc === h && <span className="ml-1 text-indigo-400">(desc)</span>}
+                        {mapping.amount === h && <span className="ml-1 text-indigo-400">(amount)</span>}
+                        {mapping.extra.includes(h) && <span className="ml-1 text-yellow-400">(+desc)</span>}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.sample_rows.map((row, i) => (
+                    <tr key={i} className="border-t border-gray-800 hover:bg-gray-800/40">
+                      {preview.headers.map((h) => (
+                        <td
+                          key={h}
+                          className={`px-3 py-1.5 whitespace-nowrap max-w-[200px] truncate ${
+                            [mapping.date, mapping.desc, mapping.amount].includes(h)
+                              ? "text-white"
+                              : mapping.extra.includes(h)
+                              ? "text-yellow-200"
+                              : "text-gray-500"
+                          }`}
+                        >
+                          {row[h] ?? ""}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-900/40 border border-red-700 text-red-300 text-sm rounded px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleImport}
+              disabled={!canImport || importing}
+              className="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
+            >
+              {importing ? "Importing..." : "Import Transactions"}
+            </button>
+            <button
+              onClick={() => { setPreview(null); setError(""); }}
+              className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded transition-colors"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={handleRemap}
+              disabled={remapping || !selectedAccount}
+              className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm px-4 py-2 rounded transition-colors ml-auto"
+            >
+              {remapping ? "Remapping..." : "Re-run Rules"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 3: result ── */}
+      {result && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Import Result</h2>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="bg-gray-800 rounded-lg p-3">
+              <p className="text-xs text-gray-400 mb-1">Total Rows</p>
+              <p className="text-xl font-bold">{result.total_rows}</p>
+            </div>
+            <div className="bg-green-900/30 border border-green-800 rounded-lg p-3">
+              <p className="text-xs text-green-400 mb-1">Imported</p>
+              <p className="text-xl font-bold text-green-300">{result.imported}</p>
+            </div>
+            <div className="bg-yellow-900/30 border border-yellow-800 rounded-lg p-3">
+              <p className="text-xs text-yellow-400 mb-1">Duplicates Skipped</p>
+              <p className="text-xl font-bold text-yellow-300">{result.skipped_duplicates}</p>
+            </div>
+          </div>
+
+          {result.transactions.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-400 text-xs uppercase border-b border-gray-800">
+                    <th className="text-left py-2 pr-4">Date</th>
+                    <th className="text-left py-2 pr-4">Description</th>
+                    <th className="text-right py-2 pr-4">Amount</th>
+                    <th className="text-left py-2">Category</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.transactions.map((t) => (
+                    <tr key={t.id} className="border-b border-gray-800/50">
+                      <td className="py-1.5 pr-4 text-gray-400">{t.date}</td>
+                      <td className="py-1.5 pr-4 max-w-xs truncate">{t.raw_description}</td>
+                      <td className={`py-1.5 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        {parseFloat(t.amount).toFixed(2)}
+                      </td>
+                      <td className="py-1.5">
+                        {t.category_id
+                          ? <span className="bg-indigo-900/50 text-indigo-300 text-xs px-2 py-0.5 rounded">mapped</span>
+                          : <span className="bg-yellow-900/50 text-yellow-300 text-xs px-2 py-0.5 rounded">unmapped</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <button
+            onClick={() => setResult(null)}
+            className="text-sm text-gray-400 hover:text-white transition-colors"
+          >
+            Import another file
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
