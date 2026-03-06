@@ -1,5 +1,6 @@
 import csv
 import io
+import math
 import os
 import uuid
 from datetime import date, datetime, timedelta
@@ -8,7 +9,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from fastapi import (
-    Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+    BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Response, UploadFile, status
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -66,6 +67,13 @@ with engine.connect() as _conn:
             END IF;
         END $$
     """))
+    # ── Performance indexes ──────────────────────────────────────────────────
+    _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_txn_account_id   ON transactions(account_id)"))
+    _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_txn_account_date ON transactions(account_id, date)"))
+    _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_txn_checksum     ON transactions(checksum)"))
+    _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_txn_account_cat  ON transactions(account_id, category_id)"))
+    _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_rules_account_id ON mapping_rules(account_id)"))
+    _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cats_account_id  ON categories(account_id)"))
     _conn.commit()
 
 def get_db():
@@ -133,6 +141,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Total-Count", "X-Total-Pages", "X-Page", "X-Per-Page"],
 )
 
 # ---------------------------------------------------------------------------
@@ -839,6 +848,9 @@ def list_transactions(
     year:          Optional[int]  = None,
     month:         Optional[int]  = None,
     unmapped_only: bool           = False,
+    page:          Optional[int]  = None,   # when provided → paginate + set headers
+    per_page:      int            = 50,
+    response:      Response       = None,
     db:            Session        = Depends(get_db),
     current_user:  User           = Depends(get_current_user),
 ):
@@ -858,7 +870,22 @@ def list_transactions(
     if unmapped_only:
         q = q.filter(Transaction.category_id.is_(None))
 
-    return q.order_by(Transaction.date.desc()).all()
+    q = q.order_by(Transaction.date.desc())
+
+    # Optional server-side pagination — only activated when ?page= is supplied.
+    # Callers that omit ?page (e.g. InboxPage) get the full list unchanged.
+    if page is not None:
+        per_page = max(1, min(per_page, 200))      # clamp to 1-200
+        total    = q.count()
+        pages    = math.ceil(total / per_page) if per_page else 1
+        if response is not None:
+            response.headers["X-Total-Count"] = str(total)
+            response.headers["X-Total-Pages"] = str(pages)
+            response.headers["X-Page"]        = str(page)
+            response.headers["X-Per-Page"]    = str(per_page)
+        return q.offset((page - 1) * per_page).limit(per_page).all()
+
+    return q.all()
 
 
 @app.patch(
@@ -916,6 +943,108 @@ def update_transaction(
     db.commit()
     db.refresh(txn)
     return txn
+
+
+# ---------------------------------------------------------------------------
+# Yearly Summary (server-side aggregation for ReviewPage pivot + chart)
+# ---------------------------------------------------------------------------
+
+@app.get(
+    "/accounts/{account_id}/summary",
+    tags=["Transactions"],
+    summary="Yearly pivot + monthly chart data (aggregated server-side)",
+)
+def get_yearly_summary(
+    account_id:   uuid.UUID,
+    year:         int,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    Returns two things for a given year:
+      - monthly_chart : list of {month, income, expenses} for the recharts line chart
+      - pivot         : list of {category_name, category_color, is_income,
+                                 monthly_totals, yearly_total} for the pivot table
+
+    A single GROUP BY query replaces fetching thousands of raw transaction rows.
+    """
+    account = db.query(Account).filter(
+        Account.id      == account_id,
+        Account.user_id == current_user.id,
+    ).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found.")
+
+    # One aggregation query — category × month
+    rows = db.execute(text("""
+        SELECT
+            category_id,
+            EXTRACT(month FROM date)::int AS month,
+            SUM(amount)                   AS total
+        FROM   transactions
+        WHERE  account_id = :account_id
+          AND  EXTRACT(year FROM date) = :year
+        GROUP  BY category_id, EXTRACT(month FROM date)
+    """), {"account_id": str(account_id), "year": year}).fetchall()
+
+    # Category lookup
+    cats    = db.query(Category).filter(Category.account_id == account_id).all()
+    cat_map = {str(c.id): c for c in cats}
+
+    # Build pivot_raw: cat_key → {month → float}
+    pivot_raw: Dict[Optional[str], Dict[int, float]] = {}
+    for row in rows:
+        key = str(row.category_id) if row.category_id else None
+        pivot_raw.setdefault(key, {})[row.month] = float(row.total)
+
+    # Monthly chart data (income / expenses per month, all 12 months)
+    income_by_month   = {m: 0.0 for m in range(1, 13)}
+    expenses_by_month = {m: 0.0 for m in range(1, 13)}
+    for months in pivot_raw.values():
+        for m, total in months.items():
+            if total >= 0:
+                income_by_month[m]   += total
+            else:
+                expenses_by_month[m] += abs(total)
+
+    monthly_chart = [
+        {
+            "month":    m,
+            "income":   round(income_by_month[m],   2),
+            "expenses": round(expenses_by_month[m], 2),
+        }
+        for m in range(1, 13)
+    ]
+
+    # Build pivot rows
+    pivot_rows = []
+    for key, months in pivot_raw.items():
+        if key is None:
+            cat_name  = "Uncategorized"
+            cat_color = "#6b7280"
+            is_income = False
+        else:
+            cat       = cat_map.get(key)
+            cat_name  = cat.name      if cat else "Unknown"
+            cat_color = cat.color     if cat else "#6b7280"
+            is_income = cat.is_income if cat else False
+
+        monthly_totals = {m: round(months.get(m, 0.0), 2) for m in range(1, 13)}
+        yearly_total   = round(sum(monthly_totals.values()), 2)
+
+        pivot_rows.append({
+            "category_id":    key,
+            "category_name":  cat_name,
+            "category_color": cat_color,
+            "is_income":      is_income,
+            "monthly_totals": monthly_totals,
+            "yearly_total":   yearly_total,
+        })
+
+    # Expenses first, then income; within each group sort by abs total descending
+    pivot_rows.sort(key=lambda r: (r["is_income"], -abs(r["yearly_total"])))
+
+    return {"year": year, "monthly_chart": monthly_chart, "pivot": pivot_rows}
 
 
 # ---------------------------------------------------------------------------
@@ -1140,19 +1269,51 @@ def auto_import(
 # Retroactive Re-map  (CONTEXT.md §5 – "Refine / Unmapped Inbox")
 # ---------------------------------------------------------------------------
 
+def _do_remap(account_id: uuid.UUID) -> None:
+    """
+    Background-safe remap worker — creates its own DB session so it can run
+    after the HTTP response has already been sent.  Skips is_manual transactions.
+    """
+    db = SessionLocal()
+    try:
+        rules: List[MappingRule] = (
+            db.query(MappingRule)
+            .filter(MappingRule.account_id == account_id)
+            .order_by(MappingRule.priority.desc())
+            .all()
+        )
+        txns = (
+            db.query(Transaction)
+            .filter(
+                Transaction.account_id == account_id,
+                Transaction.is_manual  == False,  # noqa: E712
+            )
+            .all()
+        )
+        for txn in txns:
+            new_cat = apply_mapping_rules(txn.raw_description, rules)
+            if new_cat != txn.category_id:
+                txn.category_id = new_cat
+        db.commit()
+    finally:
+        db.close()
+
+
 @app.post(
     "/accounts/{account_id}/remap",
     tags=["Import"],
     summary="Re-run the mapping engine on every transaction in an account",
 )
 def remap_account(
-    account_id:   uuid.UUID,
-    db:           Session = Depends(get_db),
-    current_user: User    = Depends(get_current_user),
+    account_id:       uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db:               Session = Depends(get_db),
+    current_user:     User    = Depends(get_current_user),
 ):
     """
-    Called after a user creates or edits a rule so that existing transactions
-    get the new category applied retroactively (CONTEXT.md business-logic step 4).
+    Queues a background remap and returns immediately — the response is sent
+    before the (potentially expensive) remap completes, so the UI stays snappy
+    even on accounts with tens of thousands of transactions.
     """
     account = db.query(Account).filter(
         Account.id      == account_id,
@@ -1161,23 +1322,5 @@ def remap_account(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
 
-    rules: List[MappingRule] = (
-        db.query(MappingRule)
-        .filter(MappingRule.account_id == account_id)
-        .order_by(MappingRule.priority.desc())
-        .all()
-    )
-
-    transactions = db.query(Transaction).filter(Transaction.account_id == account_id).all()
-    updated = 0
-
-    for txn in transactions:
-        if txn.is_manual:
-            continue
-        new_category_id = apply_mapping_rules(txn.raw_description, rules)
-        if new_category_id != txn.category_id:
-            txn.category_id = new_category_id
-            updated += 1
-
-    db.commit()
-    return {"total": len(transactions), "remapped": updated}
+    background_tasks.add_task(_do_remap, account_id)
+    return {"status": "queued"}
