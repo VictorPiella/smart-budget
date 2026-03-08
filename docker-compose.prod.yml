@@ -1,4 +1,4 @@
-# Production compose — uses pre-built images from Docker Hub.
+# Production compose — uses pre-built image from Docker Hub.
 # Copy .env.example → .env and fill in your values before running.
 #
 # Usage:
@@ -16,24 +16,17 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  backend:
-    image: ${DOCKER_USER}/smart-budget-backend:latest
-    container_name: budget_backend
+  app:
+    image: ${DOCKER_USER}/smart-budget:latest
+    container_name: budget_app
     restart: always
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - SECRET_KEY=${SECRET_KEY}
-    depends_on:
-      - db
-
-  frontend:
-    image: ${DOCKER_USER}/smart-budget-frontend:latest
-    container_name: budget_frontend
-    restart: always
     ports:
       - "80:80"
     depends_on:
-      - backend
+      - db
 
 volumes:
   postgres_data:
