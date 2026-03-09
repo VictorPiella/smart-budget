@@ -28,13 +28,18 @@ COPY backend/app/ ./app/
 # Frontend static files from build stage
 COPY --from=frontend-build /frontend/build /usr/share/nginx/html
 
+# Telegram bot
+COPY telegram-bot/ /telegram-bot/
+RUN pip install --no-cache-dir -r /telegram-bot/requirements.txt
+
 # Configs
 COPY nginx/nginx.combined.conf /etc/nginx/sites-available/default
 COPY supervisord.conf          /etc/supervisor/conf.d/supervisord.conf
 COPY wait-for-postgres.sh      /wait-for-postgres.sh
 COPY docker-entrypoint.sh      /docker-entrypoint.sh
+COPY start-telegram-bot.sh     /start-telegram-bot.sh
 
-RUN chmod +x /wait-for-postgres.sh /docker-entrypoint.sh \
+RUN chmod +x /wait-for-postgres.sh /docker-entrypoint.sh /start-telegram-bot.sh \
  && mkdir -p /var/log/supervisor
 
 EXPOSE 80
