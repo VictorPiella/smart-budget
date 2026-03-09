@@ -21,7 +21,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - bot_data:/data          # persists per-user bot sessions across container recreations
+      - model_cache:/root/.cache # persists docling/HuggingFace model downloads (~1 GB, one-time)
 
 volumes:
   postgres_data:
   bot_data:
+  model_cache:
