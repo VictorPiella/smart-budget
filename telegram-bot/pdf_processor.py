@@ -1,10 +1,16 @@
 """
 Unified Trade Republic (Spanish) PDF processor.
 
+Ported directly from the working original financeBotTelegram implementation.
+Only changes vs original:
+  - Excel uses tempfile instead of pdf_path.replace('.pdf', '.xlsx')
+  - Added parse_to_transactions() built on top of the working markdown output
+  - Dynamic year (datetime.now().year) instead of hardcoded 2025
+
 Three public functions:
   parse_to_markdown(pdf_path)      -> str
-  parse_to_excel(pdf_path)         -> str  (path to temp .xlsx file — caller must delete)
-  parse_to_transactions(pdf_path)  -> list[dict]  (for SmartBudget /import/auto)
+  parse_to_excel(pdf_path)         -> str  (path to temp .xlsx — caller must delete)
+  parse_to_transactions(pdf_path)  -> list[dict]  (SmartBudget /import/auto format)
 """
 from __future__ import annotations
 
@@ -12,184 +18,140 @@ import logging
 import re
 import tempfile
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
-from typing import Optional
 
 import pandas as pd
 from docling.document_converter import DocumentConverter
 
 logger = logging.getLogger(__name__)
 
-# ── Spanish month map ─────────────────────────────────────────────────────────
+_CURRENT_YEAR = datetime.now().year
+
+# ── Spanish month abbreviation → number ───────────────────────────────────────
 _MONTH_ES: dict[str, int] = {
     "ene": 1, "feb": 2, "mar": 3, "abr": 4,
     "may": 5, "jun": 6, "jul": 7, "ago": 8,
     "sep": 9, "oct": 10, "nov": 11, "dic": 12,
 }
 
-# ── Row regex — matches one data row from the docling markdown table ──────────
-# Columns: FECHA | TIPO | DESCRIPCIÓN | ENTRADA | SALIDA | BALANCE
-_ROW_RE = re.compile(
-    r'\|\s*(\d{1,2}\s+\w{3}(?:\s+\d{4})?)\s*\|'  # 1: date
-    r'\s*([^|]*?)\s*\|'                             # 2: tipo
-    r'\s*([^|]*?)\s*\|'                             # 3: descripción
-    r'\s*([^|]*?)\s*\|'                             # 4: entrada (income)
-    r'\s*([^|]*?)\s*\|'                             # 5: salida (expense)
-    r'\s*([^|]*?)\s*\|',                            # 6: balance
-    re.IGNORECASE,
-)
 
-# Header detection — marks where the table starts
-_HEADER_RE = re.compile(
-    r'\|\s*FECHA\s*\|\s*TIPO\s*\|\s*DESCRIPCI[OÓ]N',
-    re.IGNORECASE,
-)
-
-# Lines to skip regardless of content
-_SKIP_RES = [
-    re.compile(p, re.IGNORECASE)
-    for p in [
-        r'trade\s+republic',
-        r'creado\s+en',
-        r'directores',
-        r'^\|\s*-+\s*\|',          # separator rows |---|---|
-        r'^\|\s*FECHA\s*\|',       # header row itself
-    ]
-]
-
-
-# ── Internal helpers ──────────────────────────────────────────────────────────
+# ── Core: convert PDF → raw markdown (shared by all three functions) ──────────
 
 def _to_markdown_raw(pdf_path: str) -> str:
-    """Run docling on the PDF and return raw markdown. Cached by caller."""
     converter = DocumentConverter()
     result = converter.convert(pdf_path)
     return result.document.export_to_markdown()
 
 
-def _extract_matches(raw_md: str) -> list[re.Match]:
-    """Return all table-row regex matches, skipping header / meta lines."""
-    in_table = False
-    matches: list[re.Match] = []
-    for line in raw_md.splitlines():
-        if _HEADER_RE.search(line):
-            in_table = True
-            continue
-        if not in_table:
-            continue
-        if any(p.search(line) for p in _SKIP_RES):
-            continue
-        m = _ROW_RE.match(line)
-        if m:
-            matches.append(m)
-    return matches
+# ── Core: clean raw markdown → single tidy table (ported from original) ──────
 
+def _clean_transactions_table(markdown_content: str) -> str:
+    """
+    Ported verbatim from original pdf_processor_to_markdown.py / pdf_processor_to_csv.py.
+    Finds all table blocks starting with FECHA | TIPO | DESCRIPCIÓN header and
+    combines their rows into one clean table, skipping separators and metadata.
+    Year is added dynamically when missing (was hardcoded to 2025 in original).
+    """
+    table_pattern = r'\| FECHA\s+\| TIPO\s+\| DESCRIPCIÓN.*?\n((?:\|.*?\n)+)'
+    tables = re.finditer(table_pattern, markdown_content, re.MULTILINE)
 
-def _parse_date(date_str: str) -> Optional[str]:
-    """
-    'dd mon' or 'dd mon yyyy' → 'YYYY-MM-DD'.
-    Missing year defaults to the current year (dynamic, not hardcoded).
-    """
-    parts = date_str.strip().lower().split()
-    if len(parts) < 2:
-        return None
-    try:
-        day = int(parts[0])
-        month = _MONTH_ES.get(parts[1][:3])
-        if not month:
-            return None
-        year = int(parts[2]) if len(parts) >= 3 else datetime.now().year
-        return f"{year:04d}-{month:02d}-{day:02d}"
-    except (ValueError, IndexError):
-        return None
+    clean_rows: list[str] = []
+    header = (
+        "| FECHA | TIPO | DESCRIPCIÓN | ENTRADA DE DINERO | SALIDA DE DINERO | BALANCE |\n"
+        "|--------|------|-------------|------------------|-----------------|----------|"
+    )
 
+    for table_match in tables:
+        rows = table_match.group(1).split('\n')
+        for row in rows:
+            if not row.strip() or '|' not in row:
+                continue
+            # Skip separator rows
+            if re.match(r'\|[\s\-|]+\|', row):
+                continue
+            # Normalise internal newlines
+            row = re.sub(r'\n+', ' ', row)
+            cells = [cell.strip() for cell in row.split('|')]
+            if len(cells) < 7:
+                continue
+            clean_row = f"| {' | '.join(cells[1:7])} |"
+            # Skip metadata rows
+            if any(x in clean_row.lower() for x in ['trade republic', 'creado en', 'directores']):
+                continue
+            # Add year when missing (was hardcoded 'mar 2025' in original)
+            date_cell = cells[1].strip() if len(cells) > 1 else ""
+            if date_cell and len(date_cell.split()) == 2:
+                clean_row = clean_row.replace(
+                    f'| {date_cell} |',
+                    f'| {date_cell} {_CURRENT_YEAR} |',
+                    1,
+                )
+            clean_rows.append(clean_row)
 
-def _parse_amount(cell: str) -> Optional[Decimal]:
-    """
-    '1.234,56 €' → Decimal('1234.56').  Returns None if cell is empty.
-    European format: '.' = thousands sep, ',' = decimal sep.
-    """
-    cell = cell.strip().replace("€", "").strip()
-    if not cell or cell == "-":
-        return None
-    cell = cell.replace(".", "").replace(",", ".")
-    try:
-        return Decimal(cell)
-    except InvalidOperation:
-        return None
-
-
-def _fix_date_display(date_str: str) -> str:
-    """
-    For the markdown/excel display: add current year to dates that lack one.
-    e.g. '15 mar' → '15 mar 2025'
-    """
-    parts = date_str.strip().split()
-    if len(parts) == 2:  # no year
-        return f"{date_str} {datetime.now().year}"
-    return date_str
+    return header + '\n' + '\n'.join(clean_rows)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def parse_to_markdown(pdf_path: str) -> str:
-    """
-    Parse a Trade Republic (Spanish) PDF and return a formatted markdown table.
-    Replicates original pdf_processor_to_markdown.py behaviour.
-    """
+    """Return a cleaned markdown table from a Trade Republic PDF."""
     raw_md = _to_markdown_raw(pdf_path)
-    matches = _extract_matches(raw_md)
-
-    lines = [
-        "| FECHA | TIPO | DESCRIPCIÓN | ENTRADA DE DINERO | SALIDA DE DINERO | BALANCE |",
-        "|-------|------|-------------|-------------------|-----------------|---------|",
-    ]
-    for m in matches:
-        cols = [m.group(i).strip() for i in range(1, 7)]
-        cols[0] = _fix_date_display(cols[0])
-        lines.append("| " + " | ".join(cols) + " |")
-
-    return "\n".join(lines)
+    return _clean_transactions_table(raw_md)
 
 
 def parse_to_excel(pdf_path: str) -> str:
     """
-    Parse a Trade Republic (Spanish) PDF and write an .xlsx file.
-    Returns the path to the temp file — the caller is responsible for deletion.
-    Replicates original pdf_processor_to_excel.py behaviour.
+    Parse PDF and write an .xlsx file.
+    Returns the temp file path — caller must delete it.
+    Logic ported from original pdf_processor_to_excel.py.
     """
-    raw_md = _to_markdown_raw(pdf_path)
-    matches = _extract_matches(raw_md)
+    converter = DocumentConverter()
+    result = converter.convert(pdf_path)
+    markdown_content = result.document.export_to_markdown()
 
-    records = []
-    for m in matches:
-        fecha       = _fix_date_display(m.group(1).strip())
-        descripcion = m.group(3).strip()
-        entrada_raw = m.group(4).strip()
-        salida_raw  = m.group(5).strip()
+    df = pd.DataFrame(columns=[
+        "FECHA", "TIPO", "DESCRIPCIÓN",
+        "ENTRADA DE DINERO", "SALIDA DE DINERO", "BALANCE",
+    ])
 
-        # Determine monetary value (all goes into SALIDA DE DINERO, negated if expense)
-        if entrada_raw and "€" in entrada_raw:
-            valor = entrada_raw          # income — keep as-is
-        elif salida_raw and "€" in salida_raw:
-            num = salida_raw.replace("€", "").strip()
-            valor = f"-{num} €"          # expense — negate
-        else:
-            valor = ""
+    pattern = r'\|\s*(\d{2}\s+\w{3}(?:\s+\d{4})?)\s*\|\s*([^|]*)\|\s*([^|]*)\|\s*([^|]*)\|\s*([^|]*)\|\s*([^|]*)\|'
+    matches = re.findall(pattern, markdown_content)
 
-        records.append({
+    for match in matches:
+        if len(match) < 6:
+            continue
+        fecha       = match[0].strip()
+        descripcion = match[2].strip()
+        entrada     = match[3].strip()
+        salida      = match[4].strip()
+
+        # Add year when missing
+        if str(_CURRENT_YEAR) not in fecha and str(_CURRENT_YEAR - 1) not in fecha:
+            fecha += f' {_CURRENT_YEAR}'
+
+        # Remove nested table artefacts
+        descripcion = re.sub(r'\|.*\|', '', descripcion).strip()
+
+        # Determine monetary value — all goes into SALIDA column, negated if expense
+        valor_monetario = ""
+        if entrada and '€' in entrada:
+            valor_monetario = entrada
+        elif salida and '€' in salida:
+            num_part = salida.replace('€', '').strip()
+            valor_monetario = f'-{num_part} €'
+        elif '€' in descripcion:
+            valor_match = re.search(r'(\d+,\d{2}\s*€)', descripcion)
+            if valor_match:
+                valor_monetario = valor_match.group(1)
+
+        row = {
             "FECHA":             fecha,
             "TIPO":              "",
             "DESCRIPCIÓN":       descripcion,
             "ENTRADA DE DINERO": "",
-            "SALIDA DE DINERO":  valor,
+            "SALIDA DE DINERO":  valor_monetario,
             "BALANCE":           "",
-        })
-
-    df = pd.DataFrame(records, columns=[
-        "FECHA", "TIPO", "DESCRIPCIÓN",
-        "ENTRADA DE DINERO", "SALIDA DE DINERO", "BALANCE",
-    ])
+        }
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
 
     tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", prefix="tr_stmt_", delete=False)
     tmp.close()
@@ -209,44 +171,93 @@ def parse_to_excel(pdf_path: str) -> str:
 
 def parse_to_transactions(pdf_path: str) -> list[dict]:
     """
-    Parse a Trade Republic (Spanish) PDF and return a list of dicts
-    compatible with the SmartBudget /import/auto API:
-
+    Parse PDF and return a list of dicts for SmartBudget /import/auto:
       [{"date": "2025-03-15", "description": "NETFLIX", "amount": -10.99}, ...]
 
-    - Entrada column → positive amount (income)
-    - Salida  column → negative amount (expense)
-    - Rows with unparseable dates or missing amounts are skipped with a warning
+    Built on top of the working _clean_transactions_table() output so the
+    row extraction is identical to what parse_to_markdown() produces.
     """
     raw_md = _to_markdown_raw(pdf_path)
-    matches = _extract_matches(raw_md)
+    clean_table = _clean_transactions_table(raw_md)
 
     transactions: list[dict] = []
-    for m in matches:
-        date_iso = _parse_date(m.group(1))
+
+    for line in clean_table.splitlines():
+        # Skip header and separator lines
+        if not line.startswith('|') or 'FECHA' in line or re.match(r'\|[\s\-|]+\|', line):
+            continue
+
+        cells = [c.strip() for c in line.split('|')]
+        # cells[0] is empty (before first |), then: fecha, tipo, desc, entrada, salida, balance
+        if len(cells) < 7:
+            continue
+
+        fecha_str   = cells[1]
+        descripcion = cells[3]
+        entrada_str = cells[4]
+        salida_str  = cells[5]
+
+        # Parse date: "15 mar 2025" → "2025-03-15"
+        date_iso = _parse_date_str(fecha_str)
         if not date_iso:
-            logger.warning("Skipping row — unparseable date: %r", m.group(1))
+            logger.warning("Skipping — unparseable date: %r", fecha_str)
             continue
 
-        description = m.group(3).strip()
-        if not description:
+        if not descripcion:
             continue
 
-        entrada = _parse_amount(m.group(4))
-        salida  = _parse_amount(m.group(5))
-
-        if entrada is not None:
-            amount = float(entrada)        # positive — income
-        elif salida is not None:
-            amount = -float(salida)        # negative — expense
-        else:
-            logger.warning("Skipping row — no amount: date=%s desc=%s", date_iso, description)
+        # Parse amount
+        amount = _parse_amount_str(entrada_str, salida_str)
+        if amount is None:
+            logger.warning("Skipping — no amount: date=%s desc=%s", date_iso, descripcion)
             continue
 
         transactions.append({
             "date":        date_iso,
-            "description": description,
+            "description": descripcion,
             "amount":      amount,
         })
 
     return transactions
+
+
+# ── Date / amount helpers (used only by parse_to_transactions) ────────────────
+
+def _parse_date_str(date_str: str) -> str | None:
+    """'dd mon yyyy' → 'YYYY-MM-DD'. Returns None on failure."""
+    parts = date_str.strip().lower().split()
+    if len(parts) < 3:
+        return None
+    try:
+        day   = int(parts[0])
+        month = _MONTH_ES.get(parts[1][:3])
+        year  = int(parts[2])
+        if not month:
+            return None
+        return f"{year:04d}-{month:02d}-{day:02d}"
+    except (ValueError, IndexError):
+        return None
+
+
+def _parse_amount_str(entrada: str, salida: str) -> float | None:
+    """
+    entrada / salida are raw cell strings like '1.234,56 €' or ''.
+    Returns positive float for income, negative for expense, None if both empty.
+    """
+    def _to_float(cell: str) -> float | None:
+        cell = cell.replace('€', '').replace('.', '').replace(',', '.').strip()
+        if not cell or cell == '-':
+            return None
+        try:
+            return float(cell)
+        except ValueError:
+            return None
+
+    v_in  = _to_float(entrada)
+    v_out = _to_float(salida)
+
+    if v_in is not None:
+        return v_in           # income → positive
+    if v_out is not None:
+        return -v_out         # expense → negative
+    return None
