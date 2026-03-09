@@ -14,14 +14,14 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-budget_db}
       - SECRET_KEY=${SECRET_KEY}
-      # Telegram bot — leave blank to disable
+      # Telegram bot — leave BOT_TOKEN blank to disable the bot entirely
       - BOT_TOKEN=${BOT_TOKEN:-}
-      - SMARTBUDGET_EMAIL=${SMARTBUDGET_EMAIL:-}
-      - SMARTBUDGET_PASSWORD=${SMARTBUDGET_PASSWORD:-}
     ports:
       - "80:80"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - bot_data:/data          # persists per-user bot sessions across container recreations
 
 volumes:
   postgres_data:
+  bot_data:

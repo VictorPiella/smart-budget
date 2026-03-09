@@ -1,26 +1,34 @@
 """
-SmartBudget Telegram bot.
+SmartBudget Telegram bot — per-user authentication with JSON session persistence.
 
-Accepts Trade Republic (Spanish) PDF statements and offers three actions:
+Each Telegram user authenticates once via /login with their own SmartBudget
+credentials.  Sessions (email + password) are persisted to SESSIONS_FILE so
+they survive container restarts.  The JWT is kept only in memory and
+re-acquired transparently when the container restarts or the token expires.
+
+Commands:
+  /login  — start authentication flow
+  /logout — clear session
+  /status — show current login state
+
+PDF actions (after login):
   [📥 Import to SmartBudget]  [📋 Markdown]  [📊 Excel]
-
-On import, the bot first asks which account to import to (always), then
-calls the SmartBudget /import/auto API running on the same container.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import uuid
-from functools import partial
-from typing import Optional
+from pathlib import Path
 
 import httpx
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     MessageHandler,
     filters,
@@ -35,72 +43,112 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-SB_BASE_URL = os.getenv("SMARTBUDGET_URL", "http://127.0.0.1:8000")
-SB_EMAIL = os.getenv("SMARTBUDGET_EMAIL", "")
-SB_PASSWORD = os.getenv("SMARTBUDGET_PASSWORD", "")
+BOT_TOKEN    = os.getenv("BOT_TOKEN", "")
+SB_BASE_URL  = os.getenv("SMARTBUDGET_URL", "http://127.0.0.1:8000")
+SESSIONS_FILE = Path(os.getenv("SESSIONS_FILE", "/data/sessions.json"))
 
 if not BOT_TOKEN:
     logger.warning("BOT_TOKEN not set — exiting.")
     raise SystemExit(0)
 
-# ── In-memory session state ───────────────────────────────────────────────────
-# Maps a short random ID to the path of the uploaded PDF.
-_file_paths: dict[str, str] = {}
 
-# Cached parse results so re-pressing a button doesn't re-run docling.
-_parsed_cache: dict[str, list[dict]] = {}   # short_id → transactions
-_md_cache: dict[str, str] = {}              # short_id → markdown string
+# ── Session persistence ───────────────────────────────────────────────────────
+# On-disk format: { "<user_id>": {"email": "...", "password": "..."} }
+# JWT is never written to disk — re-acquired on first use after a restart.
 
-# ── JWT token cache ───────────────────────────────────────────────────────────
-_jwt_token: Optional[str] = None
+def _load_sessions() -> dict[int, dict]:
+    if SESSIONS_FILE.exists():
+        try:
+            raw = json.loads(SESSIONS_FILE.read_text())
+            sessions = {int(k): v for k, v in raw.items()}
+            # Ensure jwt key is present (in-memory only)
+            for s in sessions.values():
+                s.setdefault("jwt", None)
+            logger.info("Loaded %d session(s) from %s", len(sessions), SESSIONS_FILE)
+            return sessions
+        except Exception:
+            logger.exception("Failed to load sessions — starting fresh")
+    return {}
 
 
-async def _get_token(client: httpx.AsyncClient) -> str:
-    """Return cached JWT or re-authenticate."""
-    global _jwt_token
-    if _jwt_token:
-        return _jwt_token
+def _save_sessions() -> None:
+    """Atomically write sessions to disk (email + password only, no JWT)."""
+    SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SESSIONS_FILE.with_suffix(".tmp")
+    payload = {
+        str(uid): {"email": s["email"], "password": s["password"]}
+        for uid, s in _user_sessions.items()
+    }
+    tmp.write_text(json.dumps(payload, indent=2))
+    tmp.replace(SESSIONS_FILE)
+
+
+# user_id → {"email": str, "password": str, "jwt": str | None}
+_user_sessions: dict[int, dict] = _load_sessions()
+
+# Login conversation state: user_id → "awaiting_email" | "awaiting_password:<email>"
+_login_step: dict[int, str] = {}
+
+# ── In-memory PDF session state ───────────────────────────────────────────────
+_file_paths:    dict[str, str]        = {}  # short_id → pdf path
+_parsed_cache:  dict[str, list[dict]] = {}  # short_id → parsed transactions
+_md_cache:      dict[str, str]        = {}  # short_id → markdown string
+
+
+# ── Custom exception ──────────────────────────────────────────────────────────
+class NotLoggedInError(Exception):
+    pass
+
+
+# ── SmartBudget API helpers ───────────────────────────────────────────────────
+
+async def _get_token_for(user_id: int, client: httpx.AsyncClient) -> str:
+    """Return a valid JWT for *user_id*, re-authenticating if needed."""
+    session = _user_sessions.get(user_id)
+    if not session:
+        raise NotLoggedInError("Not logged in")
+    if session.get("jwt"):
+        return session["jwt"]
     resp = await client.post(
         f"{SB_BASE_URL}/api/auth/login",
-        data={"username": SB_EMAIL, "password": SB_PASSWORD},
+        data={"username": session["email"], "password": session["password"]},
     )
+    if resp.status_code == 401:
+        raise NotLoggedInError("Bad credentials — please /login again")
     resp.raise_for_status()
-    _jwt_token = resp.json()["access_token"]
-    return _jwt_token
+    session["jwt"] = resp.json()["access_token"]
+    return session["jwt"]
 
 
-async def _sb_get(path: str) -> dict | list:
+async def _sb_get(user_id: int, path: str) -> dict | list:
     """GET from SmartBudget API, retrying once on 401."""
-    global _jwt_token
     async with httpx.AsyncClient(timeout=30) as client:
         for attempt in range(2):
-            token = await _get_token(client)
+            token = await _get_token_for(user_id, client)
             resp = await client.get(
                 f"{SB_BASE_URL}{path}",
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code == 401 and attempt == 0:
-                _jwt_token = None
+                _user_sessions[user_id]["jwt"] = None
                 continue
             resp.raise_for_status()
             return resp.json()
     raise RuntimeError("Auth failed after retry")
 
 
-async def _sb_import(account_id: str, transactions: list[dict]) -> dict:
+async def _sb_import(user_id: int, account_id: str, transactions: list[dict]) -> dict:
     """POST /accounts/{id}/import/auto, retrying once on 401."""
-    global _jwt_token
     async with httpx.AsyncClient(timeout=60) as client:
         for attempt in range(2):
-            token = await _get_token(client)
+            token = await _get_token_for(user_id, client)
             resp = await client.post(
                 f"{SB_BASE_URL}/api/accounts/{account_id}/import/auto",
                 json={"transactions": transactions},
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code == 401 and attempt == 0:
-                _jwt_token = None
+                _user_sessions[user_id]["jwt"] = None
                 continue
             resp.raise_for_status()
             return resp.json()
@@ -122,27 +170,149 @@ def _main_keyboard(short_id: str) -> InlineKeyboardMarkup:
 
 
 def _chunk(text: str, size: int = 4000):
-    """Yield successive chunks of *text* no longer than *size* chars."""
     for i in range(0, len(text), size):
         yield text[i: i + size]
 
 
-# ── Handlers ──────────────────────────────────────────────────────────────────
+def _is_logged_in(user_id: int) -> bool:
+    return user_id in _user_sessions
 
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Receive a PDF file from the user and show the action keyboard."""
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    _login_step[user_id] = "awaiting_email"
+    await update.message.reply_text(
+        "🔐 Let's connect your SmartBudget account.\n\nWhat's your email address?"
+    )
+
+
+async def cmd_logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if user_id in _user_sessions:
+        del _user_sessions[user_id]
+        _save_sessions()
+    _login_step.pop(user_id, None)
+    await update.message.reply_text("✅ Logged out successfully.")
+
+
+async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    session = _user_sessions.get(user_id)
+    if session:
+        await update.message.reply_text(
+            f"✅ Logged in as *{session['email']}*\n\nSend a Trade Republic PDF to get started.",
+            parse_mode="Markdown",
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Not logged in. Use /login to connect your SmartBudget account."
+        )
+
+
+# ── Message handler (login flow + PDF) ───────────────────────────────────────
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes text messages through the login state machine, or handles PDFs."""
+    user_id = update.effective_user.id
+    step = _login_step.get(user_id)
+
+    # ── Login flow: waiting for email ─────────────────────────────────────────
+    if step == "awaiting_email":
+        email = (update.message.text or "").strip()
+        if not email or "@" not in email:
+            await update.message.reply_text("That doesn't look like a valid email. Try again:")
+            return
+        _login_step[user_id] = f"awaiting_password:{email}"
+        await update.message.reply_text(
+            "Got it! Now send your password.\n"
+            "_I'll delete your message immediately after reading it._",
+            parse_mode="Markdown",
+        )
+        return
+
+    # ── Login flow: waiting for password ──────────────────────────────────────
+    if step and step.startswith("awaiting_password:"):
+        email    = step.split(":", 1)[1]
+        password = (update.message.text or "").strip()
+
+        # Delete the password message immediately to keep the chat clean
+        try:
+            await update.message.delete()
+        except Exception:
+            pass  # May lack delete permission (e.g. in group chats)
+
+        if not password:
+            await update.effective_chat.send_message("Password can't be empty. Try again:")
+            return
+
+        status_msg = await update.effective_chat.send_message("⏳ Verifying credentials…")
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"{SB_BASE_URL}/api/auth/login",
+                    data={"username": email, "password": password},
+                )
+            if resp.status_code == 401:
+                await status_msg.edit_text("❌ Invalid credentials. Send your password again:")
+                # Keep step so the next message is treated as another password attempt
+                _login_step[user_id] = f"awaiting_password:{email}"
+                return
+            resp.raise_for_status()
+            jwt = resp.json()["access_token"]
+        except NotLoggedInError:
+            await status_msg.edit_text("❌ Invalid credentials. Send your password again:")
+            _login_step[user_id] = f"awaiting_password:{email}"
+            return
+        except Exception as exc:
+            logger.exception("Login request failed")
+            await status_msg.edit_text(
+                f"❌ Could not reach SmartBudget: `{exc}`\nTry again later.",
+                parse_mode="Markdown",
+            )
+            return
+
+        _user_sessions[user_id] = {"email": email, "password": password, "jwt": jwt}
+        _save_sessions()
+        del _login_step[user_id]
+        await status_msg.edit_text(
+            f"✅ *Logged in as {email}*\n\nSend a Trade Republic PDF to import transactions.",
+            parse_mode="Markdown",
+        )
+        return
+
+    # ── PDF document ──────────────────────────────────────────────────────────
+    if update.message.document:
+        await _handle_document(update, user_id)
+        return
+
+    # ── Anything else ─────────────────────────────────────────────────────────
+    if not _is_logged_in(user_id):
+        await update.message.reply_text(
+            "👋 Welcome! Use /login to connect your SmartBudget account."
+        )
+    else:
+        await update.message.reply_text(
+            "Send a Trade Republic PDF to get started, or /status to check your account."
+        )
+
+
+async def _handle_document(update: Update, user_id: int) -> None:
+    if not _is_logged_in(user_id):
+        await update.message.reply_text("❌ Not logged in. Use /login first.")
+        return
+
     doc = update.message.document
     if not doc.file_name.lower().endswith(".pdf"):
         await update.message.reply_text("Please send a PDF file.")
         return
 
     await update.message.reply_text("⏳ Downloading PDF…")
-
-    tg_file = await doc.get_file()
+    tg_file  = await doc.get_file()
     short_id = _short_id()
     pdf_path = f"/tmp/tr_{short_id}.pdf"
     await tg_file.download_to_drive(pdf_path)
-
     _file_paths[short_id] = pdf_path
 
     await update.message.reply_text(
@@ -152,39 +322,27 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
 
+# ── Button router ─────────────────────────────────────────────────────────────
+
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Route inline-keyboard button presses."""
-    query = update.callback_query
+    query   = update.callback_query
     await query.answer()
-    data: str = query.data
+    data    = query.data
+    user_id = update.effective_user.id
 
-    # ── import_to:{short_id}:{account_id} ────────────────────────────────────
     if data.startswith("import_to:"):
-        parts = data.split(":", 2)          # maxsplit=2 — account_id may contain hyphens
-        short_id = parts[1]
-        account_id = parts[2]
-        await _handle_import_to(query, short_id, account_id)
-        return
-
-    # ── import:{short_id} ─────────────────────────────────────────────────────
-    if data.startswith("import:"):
-        short_id = data.split(":", 1)[1]
-        await _handle_import(query, short_id)
-        return
-
-    # ── md:{short_id} ─────────────────────────────────────────────────────────
-    if data.startswith("md:"):
-        short_id = data.split(":", 1)[1]
-        await _handle_markdown(query, short_id)
-        return
-
-    # ── excel:{short_id} ──────────────────────────────────────────────────────
-    if data.startswith("excel:"):
-        short_id = data.split(":", 1)[1]
-        await _handle_excel(query, short_id)
-        return
-
-    await query.edit_message_text("Unknown action.")
+        parts = data.split(":", 2)           # maxsplit=2 — account_id contains hyphens
+        await _handle_import_to(query, user_id, parts[1], parts[2])
+    elif data.startswith("import:"):
+        await _handle_import(query, user_id, data.split(":", 1)[1])
+    elif data.startswith("md:"):
+        await _handle_markdown(query, data.split(":", 1)[1])
+    elif data.startswith("excel:"):
+        await _handle_excel(query, data.split(":", 1)[1])
+    elif data.startswith("cancel:"):
+        await _handle_cancel(query, data.split(":", 1)[1])
+    else:
+        await query.edit_message_text("Unknown action.")
 
 
 # ── Sub-handlers ──────────────────────────────────────────────────────────────
@@ -197,22 +355,14 @@ async def _handle_markdown(query, short_id: str) -> None:
 
     await query.edit_message_text("⏳ Parsing PDF…", reply_markup=None)
 
-    if short_id in _md_cache:
-        md = _md_cache[short_id]
-    else:
-        loop = asyncio.get_event_loop()
-        md = await loop.run_in_executor(None, parse_to_markdown, pdf_path)
-        _md_cache[short_id] = md
+    if short_id not in _md_cache:
+        loop = asyncio.get_running_loop()
+        _md_cache[short_id] = await loop.run_in_executor(None, parse_to_markdown, pdf_path)
 
-    # Restore buttons after sending result
-    chunks = list(_chunk(f"```\n{md}\n```"))
-    for chunk in chunks:
+    for chunk in _chunk(f"```\n{_md_cache[short_id]}\n```"):
         await query.message.reply_text(chunk, parse_mode="Markdown")
 
-    await query.message.reply_text(
-        "Choose another action:",
-        reply_markup=_main_keyboard(short_id),
-    )
+    await query.message.reply_text("Choose another action:", reply_markup=_main_keyboard(short_id))
 
 
 async def _handle_excel(query, short_id: str) -> None:
@@ -223,9 +373,8 @@ async def _handle_excel(query, short_id: str) -> None:
 
     await query.edit_message_text("⏳ Generating Excel file…", reply_markup=None)
 
-    loop = asyncio.get_event_loop()
+    loop      = asyncio.get_running_loop()
     xlsx_path = await loop.run_in_executor(None, parse_to_excel, pdf_path)
-
     try:
         with open(xlsx_path, "rb") as f:
             await query.message.reply_document(
@@ -239,33 +388,28 @@ async def _handle_excel(query, short_id: str) -> None:
         except OSError:
             pass
 
-    await query.message.reply_text(
-        "Choose another action:",
-        reply_markup=_main_keyboard(short_id),
-    )
+    await query.message.reply_text("Choose another action:", reply_markup=_main_keyboard(short_id))
 
 
-async def _handle_import(query, short_id: str) -> None:
-    """Fetch accounts from SmartBudget and show one button per account."""
-    pdf_path = _file_paths.get(short_id)
-    if not pdf_path:
+async def _handle_import(query, user_id: int, short_id: str) -> None:
+    if not _file_paths.get(short_id):
         await query.edit_message_text("⚠️ Session expired — please re-send the PDF.")
         return
-
-    if not SB_EMAIL or not SB_PASSWORD:
-        await query.edit_message_text(
-            "⚠️ SMARTBUDGET_EMAIL / SMARTBUDGET_PASSWORD not configured."
-        )
+    if not _is_logged_in(user_id):
+        await query.edit_message_text("❌ Not logged in. Use /login first.")
         return
 
     await query.edit_message_text("⏳ Fetching accounts…", reply_markup=None)
-
     try:
-        accounts = await _sb_get("/api/accounts")
+        accounts = await _sb_get(user_id, "/api/accounts")
+    except NotLoggedInError:
+        await query.edit_message_text("❌ Session expired. Use /login to reconnect.")
+        return
     except Exception as exc:
         logger.exception("Failed to fetch accounts")
-        await query.edit_message_text(f"❌ Could not reach SmartBudget:\n`{exc}`",
-                                      parse_mode="Markdown")
+        await query.edit_message_text(
+            f"❌ Could not reach SmartBudget:\n`{exc}`", parse_mode="Markdown"
+        )
         return
 
     if not accounts:
@@ -273,39 +417,30 @@ async def _handle_import(query, short_id: str) -> None:
         return
 
     buttons = [
-        [InlineKeyboardButton(
-            acc["name"],
-            callback_data=f"import_to:{short_id}:{acc['id']}",
-        )]
+        [InlineKeyboardButton(acc["name"], callback_data=f"import_to:{short_id}:{acc['id']}")]
         for acc in accounts
     ]
     buttons.append([InlineKeyboardButton("❌ Cancel", callback_data=f"cancel:{short_id}")])
-
     await query.edit_message_text(
         "📂 Choose the account to import into:",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
 
-async def _handle_import_to(query, short_id: str, account_id: str) -> None:
-    """Parse the PDF and push transactions to the chosen SmartBudget account."""
-    pdf_path = _file_paths.get(short_id)
-    if not pdf_path:
+async def _handle_import_to(query, user_id: int, short_id: str, account_id: str) -> None:
+    if not _file_paths.get(short_id):
         await query.edit_message_text("⚠️ Session expired — please re-send the PDF.")
         return
 
     await query.edit_message_text("⏳ Parsing PDF and importing…", reply_markup=None)
 
-    # Parse (use cache if already done)
-    if short_id in _parsed_cache:
-        transactions = _parsed_cache[short_id]
-    else:
-        loop = asyncio.get_event_loop()
-        transactions = await loop.run_in_executor(
-            None, parse_to_transactions, pdf_path
+    if short_id not in _parsed_cache:
+        loop = asyncio.get_running_loop()
+        _parsed_cache[short_id] = await loop.run_in_executor(
+            None, parse_to_transactions, _file_paths[short_id]
         )
-        _parsed_cache[short_id] = transactions
 
+    transactions = _parsed_cache[short_id]
     if not transactions:
         await query.edit_message_text(
             "⚠️ No transactions found in the PDF.",
@@ -313,21 +448,15 @@ async def _handle_import_to(query, short_id: str, account_id: str) -> None:
         )
         return
 
-    # Import
     try:
-        result = await _sb_import(account_id, transactions)
+        result = await _sb_import(user_id, account_id, transactions)
+    except NotLoggedInError:
+        await query.edit_message_text("❌ Session expired. Use /login to reconnect.")
+        return
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
-        if status == 404:
-            await query.edit_message_text(
-                f"❌ Account not found (404). It may have been deleted.",
-                reply_markup=_main_keyboard(short_id),
-            )
-        else:
-            await query.edit_message_text(
-                f"❌ Import failed (HTTP {status}).",
-                reply_markup=_main_keyboard(short_id),
-            )
+        msg = "❌ Account not found (deleted?)." if status == 404 else f"❌ Import failed (HTTP {status})."
+        await query.edit_message_text(msg, reply_markup=_main_keyboard(short_id))
         return
     except Exception as exc:
         logger.exception("Import failed")
@@ -339,27 +468,20 @@ async def _handle_import_to(query, short_id: str, account_id: str) -> None:
         return
 
     imported = result.get("imported", "?")
-    skipped = result.get("skipped_duplicates", 0)
-    total = result.get("total_rows", "?")
-
-    summary = (
+    skipped  = result.get("skipped_duplicates", 0)
+    total    = result.get("total_rows", "?")
+    await query.edit_message_text(
         f"✅ *Import complete!*\n\n"
         f"• Rows processed: {total}\n"
         f"• Imported: {imported}\n"
-        f"• Skipped (duplicates): {skipped}"
-    )
-    await query.edit_message_text(
-        summary,
+        f"• Skipped (duplicates): {skipped}",
         parse_mode="Markdown",
         reply_markup=_main_keyboard(short_id),
     )
 
 
-# ── Cancel handler (account selection screen) ─────────────────────────────────
-
 async def _handle_cancel(query, short_id: str) -> None:
-    pdf_path = _file_paths.get(short_id)
-    if not pdf_path:
+    if not _file_paths.get(short_id):
         await query.edit_message_text("⚠️ Session expired — please re-send the PDF.")
         return
     await query.edit_message_text(
@@ -368,36 +490,17 @@ async def _handle_cancel(query, short_id: str) -> None:
     )
 
 
-# Patch handle_button to route cancel too
-_orig_handle_button = handle_button
-
-
-async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:  # type: ignore[no-redef]
-    query = update.callback_query
-    await query.answer()
-    data: str = query.data
-
-    if data.startswith("import_to:"):
-        parts = data.split(":", 2)
-        await _handle_import_to(query, parts[1], parts[2])
-    elif data.startswith("import:"):
-        await _handle_import(query, data.split(":", 1)[1])
-    elif data.startswith("md:"):
-        await _handle_markdown(query, data.split(":", 1)[1])
-    elif data.startswith("excel:"):
-        await _handle_excel(query, data.split(":", 1)[1])
-    elif data.startswith("cancel:"):
-        await _handle_cancel(query, data.split(":", 1)[1])
-    else:
-        await query.edit_message_text("Unknown action.")
-
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+
+    app.add_handler(CommandHandler("login",  cmd_login))
+    app.add_handler(CommandHandler("logout", cmd_logout))
+    app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CallbackQueryHandler(handle_button))
+    # Catches text + documents — everything except slash commands
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
 
     logger.info("SmartBudget Telegram bot starting…")
     app.run_polling(drop_pending_updates=True)
