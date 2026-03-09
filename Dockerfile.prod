@@ -28,9 +28,11 @@ COPY backend/app/ ./app/
 # Frontend static files from build stage
 COPY --from=frontend-build /frontend/build /usr/share/nginx/html
 
-# Telegram bot
-COPY telegram-bot/ /telegram-bot/
+# Telegram bot — copy requirements first so pip layer is cached independently
+# of changes to bot.py / pdf_processor.py (same pattern as backend above)
+COPY telegram-bot/requirements.txt /telegram-bot/requirements.txt
 RUN pip install --no-cache-dir -r /telegram-bot/requirements.txt
+COPY telegram-bot/ /telegram-bot/
 
 # Configs
 COPY nginx/nginx.combined.conf /etc/nginx/sites-available/default
