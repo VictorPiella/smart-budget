@@ -28,7 +28,15 @@ from .models import (
 # Configuration
 # ---------------------------------------------------------------------------
 
-DATABASE_URL                = os.getenv("DATABASE_URL", "postgresql://user:password@db:5432/budget_db")
+DATABASE_URL                = os.getenv("DATABASE_URL") or (
+    "postgresql://{user}:{password}@{host}:{port}/{db}".format(
+        user     = os.getenv("POSTGRES_USER",     "budget_user"),
+        password = os.getenv("POSTGRES_PASSWORD", "password"),
+        host     = os.getenv("DB_HOST",           "db"),
+        port     = os.getenv("DB_PORT",           "5432"),
+        db       = os.getenv("POSTGRES_DB",       "budget_db"),
+    )
+)
 SECRET_KEY                  = os.getenv("SECRET_KEY",   "change-me-to-a-long-random-secret-in-production")
 ALGORITHM                   = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 h
