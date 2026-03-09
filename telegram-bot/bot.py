@@ -499,8 +499,9 @@ def main() -> None:
     app.add_handler(CommandHandler("logout", cmd_logout))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CallbackQueryHandler(handle_button))
-    # Catches text + documents — everything except slash commands
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
+    # Separate handlers — same as original bot pattern
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("SmartBudget Telegram bot starting…")
     app.run_polling(drop_pending_updates=True)
