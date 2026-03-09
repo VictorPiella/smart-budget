@@ -7,13 +7,14 @@ RUN npm install
 COPY frontend/ .
 RUN npm run build
 
-# ── Stage 2: Combined app image (nginx + uvicorn via supervisord) ──────────────
+# ── Stage 2: All-in-one image (postgres + nginx + uvicorn) ────────────────────
 FROM python:3.11-slim
 
-# Install nginx and supervisor
+# Install postgres, nginx, supervisor
 RUN apt-get update \
- && apt-get install -y --no-install-recommends nginx supervisor \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends postgresql nginx supervisor \
+ && rm -rf /var/lib/apt/lists/* \
+ && pg_dropcluster --stop 15 main 2>/dev/null || true
 
 # Backend deps
 WORKDIR /app
@@ -24,14 +25,15 @@ COPY backend/app/ ./app/
 # Frontend static files from build stage
 COPY --from=frontend-build /frontend/build /usr/share/nginx/html
 
-# Nginx config — proxy /api/ → localhost:8000, serve SPA
+# Configs
 COPY nginx/nginx.combined.conf /etc/nginx/sites-available/default
+COPY supervisord.conf          /etc/supervisor/conf.d/supervisord.conf
+COPY wait-for-postgres.sh      /wait-for-postgres.sh
+COPY docker-entrypoint.sh      /docker-entrypoint.sh
 
-# Supervisor config
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
-RUN mkdir -p /var/log/supervisor
+RUN chmod +x /wait-for-postgres.sh /docker-entrypoint.sh \
+ && mkdir -p /var/log/supervisor
 
 EXPOSE 80
 
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["/docker-entrypoint.sh"]

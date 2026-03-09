@@ -32,7 +32,7 @@ DATABASE_URL                = os.getenv("DATABASE_URL") or (
     "postgresql://{user}:{password}@{host}:{port}/{db}".format(
         user     = os.getenv("POSTGRES_USER",     "budget_user"),
         password = os.getenv("POSTGRES_PASSWORD", "password"),
-        host     = os.getenv("DB_HOST",           "db"),
+        host     = os.getenv("DB_HOST",           "localhost"),
         port     = os.getenv("DB_PORT",           "5432"),
         db       = os.getenv("POSTGRES_DB",       "budget_db"),
     )

@@ -1,32 +1,23 @@
-# Production compose — uses pre-built image from Docker Hub.
+# Production compose — single container with postgres + backend + frontend.
 # Copy .env.example → .env and fill in your values before running.
 #
 # Usage:
 #   docker compose -f docker-compose.prod.yml up -d
 
 services:
-  db:
-    image: postgres:15-alpine
-    container_name: budget_db
-    restart: always
-    environment:
-      POSTGRES_USER:     ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB:       ${POSTGRES_DB}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
   app:
     image: ${DOCKER_USER}/smart-budget:latest
     container_name: budget_app
     restart: always
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST:-db}:5432/${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER:-budget_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-budget_db}
       - SECRET_KEY=${SECRET_KEY}
     ports:
       - "80:80"
-    depends_on:
-      - db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
 volumes:
   postgres_data:
