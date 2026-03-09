@@ -20,9 +20,15 @@ if [ ! -f "$PGDATA/PG_VERSION" ]; then
     echo "[entrypoint] Fresh data directory — initializing PostgreSQL cluster..."
     mkdir -p "$PGDATA"
     chown postgres:postgres "$PGDATA"
-    su -s /bin/sh postgres -c "$PG_BIN/initdb -D $PGDATA --auth-local=trust --auth-host=md5"
+    su -s /bin/sh postgres -c "$PG_BIN/initdb -D $PGDATA --auth=trust"
     echo "[entrypoint] Cluster initialized."
 fi
+
+# ── Fix pg_hba.conf: use trust auth (safe inside single container) ────────────
+# PG14+ stores passwords as scram-sha-256 but older initdb used md5 in
+# pg_hba.conf — they don't match and auth fails. Trust sidesteps this entirely.
+sed -i 's/\(host[[:space:]].*\)md5$/\1trust/g' "$PGDATA/pg_hba.conf"
+sed -i 's/\(host[[:space:]].*\)scram-sha-256$/\1trust/g' "$PGDATA/pg_hba.conf"
 
 # ── Ensure user/db exist (runs every start — idempotent) ─────────────────────
 echo "[entrypoint] Ensuring user '$PG_USER' and database '$PG_DB' exist..."
