@@ -110,7 +110,7 @@ async def _get_token_for(user_id: int, client: httpx.AsyncClient) -> str:
     if session.get("jwt"):
         return session["jwt"]
     resp = await client.post(
-        f"{SB_BASE_URL}/api/auth/login",
+        f"{SB_BASE_URL}/auth/login",
         data={"username": session["email"], "password": session["password"]},
     )
     if resp.status_code == 401:
@@ -143,7 +143,7 @@ async def _sb_import(user_id: int, account_id: str, transactions: list[dict]) ->
         for attempt in range(2):
             token = await _get_token_for(user_id, client)
             resp = await client.post(
-                f"{SB_BASE_URL}/api/accounts/{account_id}/import/auto",
+                f"{SB_BASE_URL}/accounts/{account_id}/import/auto",
                 json={"transactions": transactions},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -251,7 +251,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(
-                    f"{SB_BASE_URL}/api/auth/login",
+                    f"{SB_BASE_URL}/auth/login",
                     data={"username": email, "password": password},
                 )
             if resp.status_code == 401:
@@ -401,7 +401,7 @@ async def _handle_import(query, user_id: int, short_id: str) -> None:
 
     await query.edit_message_text("⏳ Fetching accounts…", reply_markup=None)
     try:
-        accounts = await _sb_get(user_id, "/api/accounts")
+        accounts = await _sb_get(user_id, "/accounts")
     except NotLoggedInError:
         await query.edit_message_text("❌ Session expired. Use /login to reconnect.")
         return
