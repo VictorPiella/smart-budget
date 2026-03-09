@@ -7,4 +7,4 @@ until pg_isready -h 127.0.0.1 -p 5432 -q 2>/dev/null; do
 done
 echo "[uvicorn] PostgreSQL ready — starting uvicorn."
 
-exec uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+exec uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
