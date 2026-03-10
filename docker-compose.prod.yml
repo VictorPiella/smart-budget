@@ -20,10 +20,10 @@ services:
       - "80:80"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - bot_data:/data          # persists per-user bot sessions across container recreations
+      - uploads:/uploads        # persists PDF uploads + bot sessions (sessions.json lives here)
       - model_cache:/root/.cache # persists docling/HuggingFace model downloads (~1 GB, one-time)
 
 volumes:
   postgres_data:
-  bot_data:
+  uploads:
   model_cache:

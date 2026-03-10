@@ -10,11 +10,21 @@ RUN npm run build
 # ── Stage 2: All-in-one image (postgres + nginx + uvicorn) ────────────────────
 FROM python:3.11-slim
 
+# Tell Qt/OpenCV to render offscreen — prevents "libxcb" errors in headless containers.
+ENV QT_QPA_PLATFORM=offscreen \
+    MPLBACKEND=Agg
+
 # Install postgres, nginx, supervisor.
 # Save the installed PG version to /etc/pg_version so entrypoint can find
 # the binaries regardless of which version apt resolves to.
+# libxcb1 + libgl1 + libglib2.0-0 are required by docling's image-processing
+# stack (pypdfium2 / OpenCV) even in headless mode.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends postgresql nginx supervisor \
+ && apt-get install -y --no-install-recommends \
+      postgresql nginx supervisor \
+      libxcb1 libxcb-shm0 libxcb-xfixes0 libxcb-render0 \
+      libxext6 libx11-6 \
+      libgl1 libglib2.0-0 \
  && pg_lsclusters -h | awk '{print $1}' | head -1 > /etc/pg_version \
  && pg_dropcluster --stop "$(cat /etc/pg_version)" main 2>/dev/null || true \
  && rm -rf /var/lib/apt/lists/*
