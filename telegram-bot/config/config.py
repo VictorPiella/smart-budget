@@ -1,7 +1,5 @@
 import os
 
-# Obtener token desde variable de entorno
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '')
-
-# Obtener ruta de uploads desde variable de entorno o usar valor predeterminado
-PDF_UPLOAD_FOLDER = os.environ.get('PDF_UPLOAD_FOLDER', '/app/uploads')
+BOT_TOKEN         = os.environ.get('BOT_TOKEN', '')
+PDF_UPLOAD_FOLDER = os.environ.get('PDF_UPLOAD_FOLDER', '/uploads')
+SB_BASE_URL       = os.environ.get('SMARTBUDGET_URL', 'http://127.0.0.1:8000')

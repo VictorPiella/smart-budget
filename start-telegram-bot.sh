@@ -6,4 +6,5 @@ if [ -z "${BOT_TOKEN}" ]; then
     exit 0
 fi
 
-exec python /telegram-bot/bot.py
+cd /telegram-bot
+exec python main.py

@@ -42,7 +42,7 @@ COPY docker-entrypoint.sh      /docker-entrypoint.sh
 COPY start-telegram-bot.sh     /start-telegram-bot.sh
 
 RUN chmod +x /wait-for-postgres.sh /docker-entrypoint.sh /start-telegram-bot.sh \
- && mkdir -p /var/log/supervisor
+ && mkdir -p /var/log/supervisor /uploads
 
 EXPOSE 80
 
