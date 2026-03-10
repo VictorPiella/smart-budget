@@ -1,0 +1,13 @@
+version: "3"
+
+services:
+  finance-bot:
+    build: .
+    container_name: finance-bot
+    restart: unless-stopped
+    volumes:
+      - ./uploads:/app/uploads
+    environment:
+      - TZ=Europe/Madrid
+    labels:
+      - com.unraid.appdata=/app/uploads
