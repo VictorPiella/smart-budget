@@ -14,7 +14,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from config.config import BOT_TOKEN, PDF_UPLOAD_FOLDER, SB_BASE_URL
 from src.pdf_processor_to_markdown import process_pdf_to_markdown
 from src.pdf_processor_to_excel import process_pdf_to_excel
-from src.pdf_processor_to_transactions import process_pdf_to_transactions
+from src.pdf_processor_to_transactions import extract_transactions_from_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class FinanceBot:
     def __init__(self):
         self.application = Application.builder().token(BOT_TOKEN).build()
         self.file_paths = {}
+        self._md_cache  = {}   # short_id → markdown string (avoid re-running docling)
         self._user_sessions = self._load_sessions()
         self._login_step = {}
         self._setup_handlers()
@@ -297,6 +298,7 @@ class FinanceBot:
             try:
                 loop   = asyncio.get_running_loop()
                 result = await loop.run_in_executor(None, process_pdf_to_markdown, pdf_path)
+                self._md_cache[short_id] = result   # cache for import button
                 if len(result) > 3900:
                     result = result[:3900] + "\n... (truncado)"
                 await query.edit_message_text(f"📋 Resultado:\n\n{result}")
@@ -384,13 +386,25 @@ class FinanceBot:
             await query.edit_message_text("⚠️ Archivo no encontrado. Vuelve a enviar el PDF.")
             return
 
-        await query.edit_message_text("⏳ Procesando PDF e importando…")
+        # Reuse cached markdown if the Markdown button was already pressed;
+        # otherwise run process_pdf_to_markdown (same docling call that already works).
+        if short_id in self._md_cache:
+            await query.edit_message_text("⏳ Importando…")
+            markdown = self._md_cache[short_id]
+        else:
+            await query.edit_message_text("⏳ Procesando PDF e importando…")
+            try:
+                loop     = asyncio.get_running_loop()
+                markdown = await loop.run_in_executor(None, process_pdf_to_markdown, pdf_path)
+                self._md_cache[short_id] = markdown
+            except Exception as exc:
+                await query.edit_message_text(f"❌ Error al procesar el PDF: {exc}")
+                return
 
         try:
-            loop         = asyncio.get_running_loop()
-            transactions = await loop.run_in_executor(None, process_pdf_to_transactions, pdf_path)
+            transactions = extract_transactions_from_markdown(markdown)
         except Exception as exc:
-            await query.edit_message_text(f"❌ Error al procesar el PDF: {exc}")
+            await query.edit_message_text(f"❌ Error al extraer transacciones: {exc}")
             return
 
         if not transactions:

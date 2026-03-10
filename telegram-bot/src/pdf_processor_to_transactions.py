@@ -1,13 +1,13 @@
 """
-Extracts structured transactions from a Trade Republic (Spanish) PDF.
+Extracts structured transactions from a Trade Republic (Spanish) PDF markdown.
 
-Uses the exact same docling + regex logic as pdf_processor_to_markdown.py
-so the row detection is identical to the working markdown output.
+The public entry point is extract_transactions_from_markdown(markdown) which
+takes the string already produced by process_pdf_to_markdown — no second
+docling call needed.
 
 Returns a list of dicts compatible with SmartBudget /import/auto:
   [{"date": "YYYY-MM-DD", "description": str, "amount": float}, ...]
 """
-from docling.document_converter import DocumentConverter
 from datetime import datetime
 import re
 
@@ -18,14 +18,7 @@ _MONTH_ES = {
 }
 
 
-def process_pdf_to_transactions(pdf_path: str) -> list:
-    converter = DocumentConverter()
-    result    = converter.convert(pdf_path)
-    markdown  = result.document.export_to_markdown()
-    return _extract_transactions(markdown)
-
-
-def _extract_transactions(markdown_content: str) -> list:
+def extract_transactions_from_markdown(markdown_content: str) -> list:
     # Same pattern as pdf_processor_to_markdown.py
     table_pattern = r'\| FECHA\s+\| TIPO\s+\| DESCRIPCIÓN.*?\n((?:\|.*?\n)+)'
     tables = re.finditer(table_pattern, markdown_content, re.MULTILINE)
