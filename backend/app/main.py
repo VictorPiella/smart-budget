@@ -82,6 +82,9 @@ with engine.connect() as _conn:
     _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_txn_account_cat  ON transactions(account_id, category_id)"))
     _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_rules_account_id ON mapping_rules(account_id)"))
     _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cats_account_id  ON categories(account_id)"))
+    # ── Investment tracker columns ────────────────────────────────────────────
+    _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value NUMERIC(14,2) DEFAULT NULL"))
+    _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value_updated_at TIMESTAMP DEFAULT NULL"))
     _conn.commit()
 
 def get_db():
@@ -200,17 +203,20 @@ class CategoryCreate(BaseModel):
     is_income: bool = False
 
 class CategoryOut(BaseModel):
-    id:        uuid.UUID
-    name:      str
-    color:     str
-    is_income: bool
+    id:                          uuid.UUID
+    name:                        str
+    color:                       str
+    is_income:                   bool
+    investment_value:            Optional[float]    = None
+    investment_value_updated_at: Optional[datetime] = None
     class Config:
         from_attributes = True
 
 class CategoryUpdate(BaseModel):
-    name:      Optional[str] = None
-    color:     Optional[str] = None
-    is_income: Optional[bool] = None
+    name:             Optional[str]   = None
+    color:            Optional[str]   = None
+    is_income:        Optional[bool]  = None
+    investment_value: Optional[float] = None
 
 class MappingRuleCreate(BaseModel):
     category_id: uuid.UUID
@@ -701,6 +707,9 @@ def update_category(
         cat.color = payload.color
     if payload.is_income is not None:
         cat.is_income = payload.is_income
+    if payload.investment_value is not None:
+        cat.investment_value            = payload.investment_value
+        cat.investment_value_updated_at = datetime.utcnow()
     db.commit()
     db.refresh(cat)
     return cat
@@ -727,6 +736,49 @@ def delete_category(
         raise HTTPException(status_code=404, detail="Category not found.")
     db.delete(cat)
     db.commit()
+
+# ---------------------------------------------------------------------------
+# Investment Totals  (all-time per-category sums, used by the Investment page)
+# ---------------------------------------------------------------------------
+
+class InvestmentTotalOut(BaseModel):
+    category_id: uuid.UUID
+    total:       float   # raw sum of amounts — negative = net expense/invested
+
+@app.get("/accounts/{account_id}/investment-totals", response_model=List[InvestmentTotalOut], tags=["Investments"])
+def get_investment_totals(
+    account_id:   uuid.UUID,
+    category_ids: str,          # comma-separated UUIDs
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """Return all-time SUM(amount) per category for the requested category IDs."""
+    account = db.query(Account).filter(
+        Account.id      == account_id,
+        Account.user_id == current_user.id,
+    ).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found.")
+
+    try:
+        ids = [uuid.UUID(cid.strip()) for cid in category_ids.split(",") if cid.strip()]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid category_ids format.")
+
+    if not ids:
+        return []
+
+    rows = (
+        db.query(Transaction.category_id, func.sum(Transaction.amount).label("total"))
+        .filter(
+            Transaction.account_id  == account_id,
+            Transaction.category_id.in_(ids),
+        )
+        .group_by(Transaction.category_id)
+        .all()
+    )
+    return [{"category_id": r.category_id, "total": float(r.total)} for r in rows]
+
 
 # ---------------------------------------------------------------------------
 # Mapping Rule Routes

@@ -57,6 +57,7 @@ export default function Layout({ children }) {
     { to: "/rules", label: "Rules & Categories" },
     { to: "/review", label: "Review" },
     { to: "/inbox", label: "Unmapped Inbox", badge: unmappedCount },
+    { to: "/investment", label: "Investments" },
   ];
 
   return (

@@ -10,6 +10,7 @@ import ImportPage from "./pages/ImportPage";
 import RulesPage from "./pages/RulesPage";
 import ReviewPage from "./pages/ReviewPage";
 import InboxPage from "./pages/InboxPage";
+import InvestmentPage from "./pages/InvestmentPage";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/rules" element={<ProtectedRoute><RulesPage /></ProtectedRoute>} />
           <Route path="/review" element={<ProtectedRoute><ReviewPage /></ProtectedRoute>} />
           <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
+          <Route path="/investment" element={<ProtectedRoute><InvestmentPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>

@@ -84,13 +84,15 @@ class Account(Base):
 class Category(Base):
     __tablename__ = "categories"
 
-    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id    = Column(UUID(as_uuid=True), ForeignKey("users.id",    ondelete="CASCADE"), nullable=False, index=True)
-    account_id = Column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True,  index=True)
-    name       = Column(String(100), nullable=False)
-    color      = Column(String(7), nullable=False, default="#6366f1")
-    is_income  = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    id                          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id                     = Column(UUID(as_uuid=True), ForeignKey("users.id",    ondelete="CASCADE"), nullable=False, index=True)
+    account_id                  = Column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True,  index=True)
+    name                        = Column(String(100), nullable=False)
+    color                       = Column(String(7),   nullable=False, default="#6366f1")
+    is_income                   = Column(Boolean,     nullable=False, default=False)
+    investment_value            = Column(Numeric(14, 2), nullable=True,  default=None)
+    investment_value_updated_at = Column(DateTime,       nullable=True,  default=None)
+    created_at                  = Column(DateTime,    nullable=False, default=datetime.utcnow)
 
     user          = relationship("User",        back_populates="categories")
     account       = relationship("Account",     back_populates="categories")
