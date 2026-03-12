@@ -12,15 +12,17 @@ from fastapi import (
     BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Response, UploadFile, status
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import create_engine, extract, func, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import (
-    Base, Account, Category, MappingRule, MatchType, Transaction, User,
+    Base, Account, Category, InvestmentSnapshot, MappingRule, MatchType, Transaction, User,
     compute_checksum,
 )
 
@@ -781,6 +783,154 @@ def get_investment_totals(
 
 
 # ---------------------------------------------------------------------------
+# Investment Snapshots  (year-keyed market-value records)
+# ---------------------------------------------------------------------------
+
+class InvestmentSnapshotIn(BaseModel):
+    category_id: uuid.UUID
+    year:        int
+    value:       float
+
+class InvestmentSnapshotOut(BaseModel):
+    category_id: uuid.UUID
+    year:        int
+    value:       float
+    updated_at:  datetime
+    class Config:
+        from_attributes = True
+
+class InvestmentYearRow(BaseModel):
+    year:               int
+    contributed:        float   # raw SUM for that year (may be negative)
+    cumulative:         float   # running sum of contributions up to this year
+    snapshot_value:     Optional[float]    = None
+    snapshot_updated_at: Optional[datetime] = None
+
+class InvestmentCategorySummary(BaseModel):
+    category_id: str
+    years:       List[InvestmentYearRow]
+
+def _verify_account(account_id: uuid.UUID, current_user: User, db: Session) -> Account:
+    account = db.query(Account).filter(
+        Account.id == account_id, Account.user_id == current_user.id
+    ).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    return account
+
+@app.put("/accounts/{account_id}/investment-snapshots", response_model=InvestmentSnapshotOut, tags=["Investments"])
+def upsert_investment_snapshot(
+    account_id:   uuid.UUID,
+    payload:      InvestmentSnapshotIn,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """Create or update the market value snapshot for a category + year."""
+    _verify_account(account_id, current_user, db)
+    now = datetime.utcnow()
+    stmt = (
+        pg_insert(InvestmentSnapshot)
+        .values(
+            id=uuid.uuid4(),
+            account_id=account_id,
+            category_id=payload.category_id,
+            year=payload.year,
+            value=payload.value,
+            updated_at=now,
+        )
+        .on_conflict_do_update(
+            constraint="uq_investment_snapshot",
+            set_={"value": payload.value, "updated_at": now},
+        )
+        .returning(
+            InvestmentSnapshot.category_id,
+            InvestmentSnapshot.year,
+            InvestmentSnapshot.value,
+            InvestmentSnapshot.updated_at,
+        )
+    )
+    row = db.execute(stmt).fetchone()
+    db.commit()
+    return {"category_id": row.category_id, "year": row.year,
+            "value": float(row.value), "updated_at": row.updated_at}
+
+
+@app.get("/accounts/{account_id}/investment-summary", response_model=List[InvestmentCategorySummary], tags=["Investments"])
+def get_investment_summary(
+    account_id:   uuid.UUID,
+    category_ids: str,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    All-years summary per category: yearly + cumulative contributions, plus any stored snapshot.
+    Used by the Investment Tracker page to build the year-over-year table.
+    """
+    _verify_account(account_id, current_user, db)
+    try:
+        ids = [uuid.UUID(c.strip()) for c in category_ids.split(",") if c.strip()]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid category_ids format.")
+    if not ids:
+        return []
+
+    # Yearly contributions per category (all time)
+    contrib_rows = db.execute(text("""
+        SELECT category_id,
+               EXTRACT(year FROM date)::int AS yr,
+               SUM(amount)                  AS total
+        FROM   transactions
+        WHERE  account_id   = :account_id
+          AND  category_id  = ANY(:ids)
+        GROUP  BY category_id, EXTRACT(year FROM date)
+        ORDER  BY category_id, yr
+    """), {"account_id": str(account_id), "ids": [str(i) for i in ids]}).fetchall()
+
+    # Stored snapshots
+    snap_rows = db.execute(text("""
+        SELECT category_id, year, value, updated_at
+        FROM   investment_snapshots
+        WHERE  account_id  = :account_id
+          AND  category_id = ANY(:ids)
+    """), {"account_id": str(account_id), "ids": [str(i) for i in ids]}).fetchall()
+
+    # Index contributions by (cat_id, year)
+    contrib_map: Dict[str, Dict[int, float]] = {}
+    for r in contrib_rows:
+        contrib_map.setdefault(str(r.category_id), {})[r.yr] = float(r.total)
+
+    # Index snapshots by (cat_id, year)
+    snap_map: Dict[str, Dict[int, dict]] = {}
+    for r in snap_rows:
+        snap_map.setdefault(str(r.category_id), {})[r.year] = {
+            "value": float(r.value), "updated_at": r.updated_at
+        }
+
+    result = []
+    for cat_id in ids:
+        key = str(cat_id)
+        contrib_years = contrib_map.get(key, {})
+        snap_years    = snap_map.get(key, {})
+        all_years     = sorted(set(contrib_years) | set(snap_years))
+        cumulative    = 0.0
+        year_rows     = []
+        for yr in all_years:
+            contributed = contrib_years.get(yr, 0.0)
+            cumulative += contributed
+            snap        = snap_years.get(yr)
+            year_rows.append(InvestmentYearRow(
+                year=yr,
+                contributed=round(contributed, 2),
+                cumulative=round(cumulative, 2),
+                snapshot_value=round(snap["value"], 2) if snap else None,
+                snapshot_updated_at=snap["updated_at"] if snap else None,
+            ))
+        result.append(InvestmentCategorySummary(category_id=key, years=year_rows))
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Mapping Rule Routes
 # ---------------------------------------------------------------------------
 
@@ -1384,3 +1534,228 @@ def remap_account(
 
     background_tasks.add_task(_do_remap, account_id)
     return {"status": "queued"}
+
+
+# ---------------------------------------------------------------------------
+# Data Export / Import  (full backup & restore)
+# ---------------------------------------------------------------------------
+
+@app.get("/data/export", tags=["Data"], summary="Download a full JSON backup of all user data")
+def export_data(
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    Streams a JSON file containing every account, category, transaction, mapping rule,
+    and investment snapshot for the authenticated user.
+    Category names are used instead of IDs so the file is human-readable and portable.
+    """
+    accounts = db.query(Account).filter(Account.user_id == current_user.id).all()
+
+    export = {
+        "version":     1,
+        "exported_at": datetime.utcnow().isoformat(),
+        "accounts":    [],
+    }
+
+    for acc in accounts:
+        cats  = db.query(Category).filter(Category.account_id == acc.id).all()
+        cat_id_to_name = {str(c.id): c.name for c in cats}
+
+        rules = db.query(MappingRule).filter(MappingRule.account_id == acc.id).all()
+        txns  = db.query(Transaction).filter(Transaction.account_id == acc.id).order_by(Transaction.date).all()
+        snaps = db.query(InvestmentSnapshot).filter(InvestmentSnapshot.account_id == acc.id).all()
+
+        export["accounts"].append({
+            "name":     acc.name,
+            "currency": acc.currency,
+            "categories": [
+                {
+                    "name":                        c.name,
+                    "color":                       c.color,
+                    "is_income":                   c.is_income,
+                    "investment_value":            float(c.investment_value) if c.investment_value is not None else None,
+                    "investment_value_updated_at": c.investment_value_updated_at.isoformat() if c.investment_value_updated_at else None,
+                }
+                for c in cats
+            ],
+            "rules": [
+                {
+                    "category_name": cat_id_to_name.get(str(r.category_id), ""),
+                    "pattern":       r.pattern,
+                    "match_type":    r.match_type.value,
+                    "priority":      r.priority,
+                }
+                for r in rules
+            ],
+            "transactions": [
+                {
+                    "date":          t.date.isoformat(),
+                    "description":   t.raw_description,
+                    "amount":        float(t.amount),
+                    "category_name": cat_id_to_name.get(str(t.category_id), "") if t.category_id else "",
+                    "is_manual":     t.is_manual,
+                }
+                for t in txns
+            ],
+            "investment_snapshots": [
+                {
+                    "category_name": cat_id_to_name.get(str(s.category_id), ""),
+                    "year":          s.year,
+                    "value":         float(s.value),
+                }
+                for s in snaps
+            ],
+        })
+
+    filename = f"smartbudget-backup-{datetime.utcnow().strftime('%Y-%m-%d')}.json"
+    content  = json.dumps(export, indent=2, ensure_ascii=False)
+    return StreamingResponse(
+        io.StringIO(content),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/data/import", tags=["Data"], summary="Restore / merge data from a JSON backup file")
+async def import_data(
+    file:         UploadFile  = File(...),
+    db:           Session     = Depends(get_db),
+    current_user: User        = Depends(get_current_user),
+):
+    """
+    Merges a JSON backup (produced by GET /data/export) into the user's data.
+    Merge strategy — nothing is ever deleted or overwritten:
+    - Account:     matched by (name, currency); created if missing.
+    - Category:    matched by (account_id, name); created if missing.
+    - Transaction: deduplicated by checksum (same logic as CSV import).
+    - Rule:        skipped if identical (category, pattern, match_type) already exists.
+    - Snapshot:    upserted (value updated if year+category already recorded).
+    """
+    raw = await file.read()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Invalid JSON file.")
+
+    if data.get("version") != 1:
+        raise HTTPException(status_code=422, detail="Unsupported backup version.")
+
+    stats = {
+        "accounts_created":     0,
+        "categories_created":   0,
+        "transactions_imported": 0,
+        "transactions_skipped":  0,
+        "rules_created":        0,
+        "snapshots_upserted":   0,
+    }
+
+    for acc_data in data.get("accounts", []):
+        # ── Account ──────────────────────────────────────────────────────────
+        acc = db.query(Account).filter(
+            Account.user_id  == current_user.id,
+            Account.name     == acc_data["name"],
+            Account.currency == acc_data["currency"],
+        ).first()
+        if not acc:
+            acc = Account(
+                user_id  = current_user.id,
+                name     = acc_data["name"],
+                currency = acc_data["currency"],
+            )
+            db.add(acc)
+            db.flush()
+            stats["accounts_created"] += 1
+
+        # ── Categories ────────────────────────────────────────────────────────
+        name_to_cat_id: Dict[str, uuid.UUID] = {}
+        for cat_data in acc_data.get("categories", []):
+            cat = db.query(Category).filter(
+                Category.account_id == acc.id,
+                Category.name       == cat_data["name"],
+            ).first()
+            if not cat:
+                cat = Category(
+                    user_id    = current_user.id,
+                    account_id = acc.id,
+                    name       = cat_data["name"],
+                    color      = cat_data.get("color", "#6366f1"),
+                    is_income  = cat_data.get("is_income", False),
+                )
+                db.add(cat)
+                db.flush()
+                stats["categories_created"] += 1
+            name_to_cat_id[cat.name] = cat.id
+
+        # ── Mapping rules ─────────────────────────────────────────────────────
+        existing_rules = {
+            (str(r.category_id), r.pattern, r.match_type.value)
+            for r in db.query(MappingRule).filter(MappingRule.account_id == acc.id).all()
+        }
+        for rule_data in acc_data.get("rules", []):
+            cat_id = name_to_cat_id.get(rule_data.get("category_name", ""))
+            if not cat_id:
+                continue
+            key = (str(cat_id), rule_data["pattern"], rule_data["match_type"])
+            if key not in existing_rules:
+                db.add(MappingRule(
+                    user_id     = current_user.id,
+                    account_id  = acc.id,
+                    category_id = cat_id,
+                    pattern     = rule_data["pattern"],
+                    match_type  = MatchType(rule_data["match_type"]),
+                    priority    = rule_data.get("priority", 0),
+                ))
+                existing_rules.add(key)
+                stats["rules_created"] += 1
+
+        # ── Transactions ──────────────────────────────────────────────────────
+        for txn_data in acc_data.get("transactions", []):
+            checksum = compute_checksum(
+                txn_data["date"], str(txn_data["amount"]), txn_data["description"]
+            )
+            exists = db.query(Transaction.id).filter(
+                Transaction.account_id == acc.id,
+                Transaction.checksum   == checksum,
+            ).first()
+            if exists:
+                stats["transactions_skipped"] += 1
+                continue
+            cat_id = name_to_cat_id.get(txn_data.get("category_name", ""))
+            db.add(Transaction(
+                account_id      = acc.id,
+                date            = date.fromisoformat(txn_data["date"]),
+                raw_description = txn_data["description"],
+                amount          = Decimal(str(txn_data["amount"])),
+                category_id     = cat_id,
+                is_manual       = txn_data.get("is_manual", False),
+                checksum        = checksum,
+            ))
+            stats["transactions_imported"] += 1
+
+        # ── Investment snapshots ──────────────────────────────────────────────
+        for snap_data in acc_data.get("investment_snapshots", []):
+            cat_id = name_to_cat_id.get(snap_data.get("category_name", ""))
+            if not cat_id:
+                continue
+            stmt = (
+                pg_insert(InvestmentSnapshot)
+                .values(
+                    id=uuid.uuid4(),
+                    account_id=acc.id,
+                    category_id=cat_id,
+                    year=snap_data["year"],
+                    value=snap_data["value"],
+                    updated_at=datetime.utcnow(),
+                )
+                .on_conflict_do_update(
+                    constraint="uq_investment_snapshot",
+                    set_={"value": snap_data["value"], "updated_at": datetime.utcnow()},
+                )
+            )
+            db.execute(stmt)
+            stats["snapshots_upserted"] += 1
+
+        db.commit()
+
+    return stats

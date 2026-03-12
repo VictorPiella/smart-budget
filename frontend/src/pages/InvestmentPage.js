@@ -32,10 +32,10 @@ export default function InvestmentPage() {
     try { return new Set(JSON.parse(localStorage.getItem(LS_KEY) || "[]")); }
     catch { return new Set(); }
   });
-  const [summaryData, setSummaryData]   = useState(null);   // /summary?year=
-  const [allTimeTotals, setAllTimeTotals] = useState({});   // catId → abs(sum)
-  const [savingFor, setSavingFor]       = useState(null);   // catId being saved
-  const [inputValues, setInputValues]   = useState({});     // catId → string
+  const [summaryData, setSummaryData]     = useState(null);  // GET /summary?year= (bar chart)
+  const [investSummary, setInvestSummary] = useState([]);    // GET /investment-summary (all years)
+  const [inputByYear, setInputByYear]     = useState({});    // catId → controlled input string
+  const [savingFor, setSavingFor]         = useState(null);
 
   // ── Fetch categories ──────────────────────────────────────────────────────
 
@@ -43,21 +43,11 @@ export default function InvestmentPage() {
     if (!selectedAccount) return;
     const { data } = await api.get(`/accounts/${selectedAccount.id}/categories`);
     setCategories(data);
-    // Pre-fill input values from stored investment_value
-    setInputValues((prev) => {
-      const next = { ...prev };
-      data.forEach((c) => {
-        if (!(c.id in next)) {
-          next[c.id] = c.investment_value != null ? String(c.investment_value) : "";
-        }
-      });
-      return next;
-    });
   }, [selectedAccount]);
 
   useEffect(() => { fetchCategories(); }, [fetchCategories]);
 
-  // ── Fetch yearly summary ──────────────────────────────────────────────────
+  // ── Fetch yearly bar-chart data ───────────────────────────────────────────
 
   useEffect(() => {
     if (!selectedAccount) return;
@@ -66,19 +56,37 @@ export default function InvestmentPage() {
       .catch(() => setSummaryData(null));
   }, [selectedAccount, year]);
 
-  // ── Fetch all-time totals whenever selection changes ──────────────────────
+  // ── Fetch all-years investment summary ────────────────────────────────────
+
+  const fetchInvestSummary = useCallback(async () => {
+    if (!selectedAccount || selectedIds.size === 0) {
+      setInvestSummary([]);
+      return;
+    }
+    const ids = [...selectedIds].join(",");
+    try {
+      const { data } = await api.get(
+        `/accounts/${selectedAccount.id}/investment-summary?category_ids=${ids}`
+      );
+      setInvestSummary(data);
+    } catch {
+      setInvestSummary([]);
+    }
+  }, [selectedAccount, selectedIds]);
+
+  useEffect(() => { fetchInvestSummary(); }, [fetchInvestSummary]);
+
+  // ── Sync input fields whenever year or summary data changes ───────────────
 
   useEffect(() => {
-    if (!selectedAccount || selectedIds.size === 0) { setAllTimeTotals({}); return; }
-    const ids = [...selectedIds].join(",");
-    api.get(`/accounts/${selectedAccount.id}/investment-totals?category_ids=${ids}`)
-      .then(({ data }) => {
-        const map = {};
-        data.forEach((r) => { map[r.category_id] = Math.abs(r.total); });
-        setAllTimeTotals(map);
-      })
-      .catch(() => setAllTimeTotals({}));
-  }, [selectedAccount, selectedIds]);
+    const next = {};
+    investSummary.forEach((cs) => {
+      const yearRow = cs.years.find((r) => r.year === year);
+      next[cs.category_id] =
+        yearRow?.snapshot_value != null ? String(yearRow.snapshot_value) : "";
+    });
+    setInputByYear(next);
+  }, [year, investSummary]);
 
   // ── Toggle category selection ─────────────────────────────────────────────
 
@@ -93,20 +101,26 @@ export default function InvestmentPage() {
 
   // ── Save current value on blur ────────────────────────────────────────────
 
-  const handleValueBlur = async (cat) => {
-    const raw = inputValues[cat.id];
-    const num  = parseFloat(raw.replace(",", "."));
+  const handleValueBlur = async (catId) => {
+    const raw = inputByYear[catId] ?? "";
+    const num = parseFloat(raw.replace(",", "."));
     if (isNaN(num) || num < 0) return;
+
     // Skip if unchanged
-    if (cat.investment_value != null && Math.abs(cat.investment_value - num) < 0.001) return;
-    setSavingFor(cat.id);
+    const cs = investSummary.find((s) => s.category_id === catId);
+    const existing = cs?.years.find((r) => r.year === year);
+    if (existing?.snapshot_value != null && Math.abs(existing.snapshot_value - num) < 0.001) return;
+
+    setSavingFor(catId);
     try {
-      await api.patch(`/accounts/${selectedAccount.id}/categories/${cat.id}`, {
-        investment_value: num,
+      await api.put(`/accounts/${selectedAccount.id}/investment-snapshots`, {
+        category_id: catId,
+        year,
+        value: num,
       });
-      await fetchCategories();
+      await fetchInvestSummary();
     } catch {
-      // silently ignore — value reverts on next fetch
+      // silently ignore — input reverts on next fetch
     } finally {
       setSavingFor(null);
     }
@@ -115,7 +129,8 @@ export default function InvestmentPage() {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   const getMonthlyData = (catId) => {
-    if (!summaryData?.pivot) return Array(12).fill(0).map((_, i) => ({ name: MONTH_NAMES[i], value: 0 }));
+    if (!summaryData?.pivot)
+      return Array(12).fill(0).map((_, i) => ({ name: MONTH_NAMES[i], value: 0 }));
     const row = summaryData.pivot.find((r) => r.category_id === catId);
     return MONTH_NAMES.map((name, i) => ({
       name,
@@ -123,14 +138,22 @@ export default function InvestmentPage() {
     }));
   };
 
+  const getCatSummary = (catId) => investSummary.find((cs) => cs.category_id === catId);
+
   const selectedCats = categories.filter((c) => selectedIds.has(c.id));
 
-  // Portfolio totals (only categories where we have both contributed + current value)
-  const portfolioContributed = selectedCats.reduce((s, c) => s + (allTimeTotals[c.id] || 0), 0);
-  const portfolioCurrent     = selectedCats.reduce((s, c) => {
-    const v = parseFloat(inputValues[c.id]);
-    return s + (isNaN(v) ? 0 : v);
-  }, 0);
+  // Portfolio summary — all-time cumulative invested + latest snapshot per cat
+  const portfolioRows = selectedCats.map((c) => {
+    const cs = getCatSummary(c.id);
+    if (!cs || cs.years.length === 0) return { contributed: 0, current: null };
+    const sorted = [...cs.years].sort((a, b) => a.year - b.year);
+    const contributed = sorted[sorted.length - 1]?.cumulative ?? 0;
+    const latestSnap  = sorted.slice().reverse().find((r) => r.snapshot_value != null);
+    return { contributed, current: latestSnap?.snapshot_value ?? null };
+  });
+
+  const portfolioContributed = portfolioRows.reduce((s, r) => s + r.contributed, 0);
+  const portfolioCurrent     = portfolioRows.reduce((s, r) => s + (r.current ?? 0), 0);
   const portfolioGain        = portfolioCurrent - portfolioContributed;
   const portfolioGainPct     = portfolioContributed > 0
     ? ((portfolioGain / portfolioContributed) * 100).toFixed(1)
@@ -201,24 +224,35 @@ export default function InvestmentPage() {
         )}
       </div>
 
-      {/* ── Investment cards ────────────────────────────────────────────── */}
+      {/* ── Empty state ──────────────────────────────────────────────────── */}
       {selectedCats.length === 0 && (
         <p className="text-gray-500 text-sm text-center py-8">
           Select one or more categories above to see their investment performance.
         </p>
       )}
 
+      {/* ── Investment cards ────────────────────────────────────────────── */}
       {selectedCats.map((cat) => {
-        const monthData    = getMonthlyData(cat.id);
-        const contributed  = allTimeTotals[cat.id] || 0;
-        const rawInput     = inputValues[cat.id] ?? "";
-        const currentVal   = parseFloat(rawInput.replace(",", "."));
+        const cs        = getCatSummary(cat.id);
+        const yearRow   = cs?.years.find((r) => r.year === year);
+        const contributed = yearRow?.contributed ?? 0;
+        const cumulative  = yearRow?.cumulative  ?? 0;
+        const monthData = getMonthlyData(cat.id);
+
+        const rawInput    = inputByYear[cat.id] ?? "";
+        const currentVal  = parseFloat(rawInput.replace(",", "."));
         const hasCurrentVal = !isNaN(currentVal) && currentVal >= 0;
-        const gain         = hasCurrentVal ? currentVal - contributed : null;
-        const gainPct      = (contributed > 0 && gain != null)
-          ? ((gain / contributed) * 100).toFixed(1)
+        const gain    = hasCurrentVal ? currentVal - cumulative : null;
+        const gainPct = cumulative > 0 && gain != null
+          ? ((gain / cumulative) * 100).toFixed(1)
           : null;
-        const isSaving     = savingFor === cat.id;
+        const isSaving   = savingFor === cat.id;
+        const lastUpdated = yearRow?.snapshot_updated_at;
+
+        // All years with at least contributions or a snapshot, ascending
+        const allYears = cs
+          ? [...cs.years].sort((a, b) => a.year - b.year)
+          : [];
 
         return (
           <div
@@ -230,15 +264,22 @@ export default function InvestmentPage() {
               <span className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
               <h2 className="font-semibold text-gray-100">{cat.name}</h2>
               {cat.is_income && (
-                <span className="text-xs bg-green-900 text-green-300 rounded px-1.5 py-0.5">Income</span>
+                <span className="text-xs bg-green-900 text-green-300 rounded px-1.5 py-0.5">
+                  Income
+                </span>
               )}
             </div>
 
-            {/* All-time contributed */}
-            <div className="text-sm text-gray-400">
-              Total contributed{" "}
-              <span className="text-gray-300 font-medium">(all time)</span>:{" "}
-              <span className="text-white font-semibold">{fmt(contributed, currency)}</span>
+            {/* Year stats row */}
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-gray-400">Contributed in {year}: </span>
+                <span className="text-white font-medium">{fmt(contributed, currency)}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Cumulative to {year}: </span>
+                <span className="text-white font-medium">{fmt(cumulative, currency)}</span>
+              </div>
             </div>
 
             {/* Monthly bar chart */}
@@ -264,7 +305,11 @@ export default function InvestmentPage() {
                   />
                   <Tooltip
                     formatter={(v) => [fmt(v, currency), "Contributed"]}
-                    contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: 6 }}
+                    contentStyle={{
+                      backgroundColor: "#1f2937",
+                      border: "1px solid #374151",
+                      borderRadius: 6,
+                    }}
                     labelStyle={{ color: "#d1d5db" }}
                     itemStyle={{ color: "#f3f4f6" }}
                   />
@@ -273,11 +318,11 @@ export default function InvestmentPage() {
               </ResponsiveContainer>
             </div>
 
-            {/* Current value input + gain */}
+            {/* Year-end value input + gain chip */}
             <div className="border-t border-gray-800 pt-4 flex flex-col sm:flex-row sm:items-end gap-4">
               <div className="flex-1 space-y-1">
                 <label className="text-xs text-gray-500 uppercase tracking-wide">
-                  Current market value
+                  Value at end of {year}
                 </label>
                 <div className="relative">
                   <input
@@ -286,9 +331,9 @@ export default function InvestmentPage() {
                     step="0.01"
                     value={rawInput}
                     onChange={(e) =>
-                      setInputValues((prev) => ({ ...prev, [cat.id]: e.target.value }))
+                      setInputByYear((prev) => ({ ...prev, [cat.id]: e.target.value }))
                     }
-                    onBlur={() => handleValueBlur(cat)}
+                    onBlur={() => handleValueBlur(cat.id)}
                     placeholder="0.00"
                     disabled={isSaving}
                     className={`w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm
@@ -301,20 +346,17 @@ export default function InvestmentPage() {
                     </span>
                   )}
                 </div>
-                {cat.investment_value_updated_at && (
+                {lastUpdated && (
                   <p className="text-xs text-gray-600">
-                    last updated: {fmtDate(cat.investment_value_updated_at)}
+                    last updated: {fmtDate(lastUpdated)}
                   </p>
                 )}
               </div>
 
-              {/* Gain / loss chip */}
               {gain != null && (
                 <div
                   className={`flex-shrink-0 rounded-lg px-4 py-2 text-sm font-semibold ${
-                    gain >= 0
-                      ? "bg-green-900/40 text-green-300"
-                      : "bg-red-900/40 text-red-300"
+                    gain >= 0 ? "bg-green-900/40 text-green-300" : "bg-red-900/40 text-red-300"
                   }`}
                 >
                   {gain >= 0 ? "+" : ""}
@@ -327,6 +369,85 @@ export default function InvestmentPage() {
                 </div>
               )}
             </div>
+
+            {/* ── Year-over-year table ─────────────────────────────────── */}
+            {allYears.length > 0 && (
+              <div className="border-t border-gray-800 pt-4">
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">
+                  Year-over-Year
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[520px]">
+                    <thead>
+                      <tr className="text-xs text-gray-500 uppercase border-b border-gray-800">
+                        <th className="text-left pb-2 pr-4">Year</th>
+                        <th className="text-right pb-2 pr-4">Contributed</th>
+                        <th className="text-right pb-2 pr-4">Cumulative</th>
+                        <th className="text-right pb-2 pr-4">Year-end value</th>
+                        <th className="text-right pb-2">Gain / Loss</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allYears.map((row) => {
+                        const isCurrent = row.year === year;
+                        const g = row.snapshot_value != null
+                          ? row.snapshot_value - row.cumulative
+                          : null;
+                        const gPct =
+                          row.cumulative > 0 && g != null
+                            ? ((g / row.cumulative) * 100).toFixed(1)
+                            : null;
+                        return (
+                          <tr
+                            key={row.year}
+                            className={`border-b border-gray-800/50 transition-colors ${
+                              isCurrent ? "bg-indigo-900/20" : "hover:bg-gray-800/30"
+                            }`}
+                          >
+                            <td className={`py-2 pr-4 font-medium ${isCurrent ? "text-indigo-300" : "text-gray-300"}`}>
+                              {row.year}
+                              {isCurrent && (
+                                <span className="ml-1.5 text-xs font-normal text-indigo-500">
+                                  ←
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 pr-4 text-right text-gray-400">
+                              {fmt(row.contributed, currency)}
+                            </td>
+                            <td className="py-2 pr-4 text-right text-white">
+                              {fmt(row.cumulative, currency)}
+                            </td>
+                            <td className="py-2 pr-4 text-right">
+                              {row.snapshot_value != null ? (
+                                <span className="text-white">{fmt(row.snapshot_value, currency)}</span>
+                              ) : (
+                                <span className="text-gray-600">—</span>
+                              )}
+                            </td>
+                            <td className="py-2 text-right">
+                              {g != null ? (
+                                <span className={g >= 0 ? "text-green-400" : "text-red-400"}>
+                                  {g >= 0 ? "+" : ""}
+                                  {fmt(g, currency)}
+                                  {gPct != null && (
+                                    <span className="text-xs ml-1 opacity-75">
+                                      ({g >= 0 ? "+" : ""}{gPct}%)
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="text-gray-600">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         );
       })}
@@ -335,9 +456,12 @@ export default function InvestmentPage() {
       {selectedCats.length >= 2 && (
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
           <h2 className="font-semibold text-gray-200 mb-4">Portfolio Summary</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Based on all-time cumulative contributions and latest recorded value per category.
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-0.5">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Total contributed</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Total invested</p>
               <p className="text-lg font-bold text-white">{fmt(portfolioContributed, currency)}</p>
             </div>
             <div className="space-y-0.5">

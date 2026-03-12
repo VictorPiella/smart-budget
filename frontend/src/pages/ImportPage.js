@@ -2,29 +2,105 @@ import React, { useEffect, useState } from "react";
 import api from "../api";
 import { useAccounts } from "../context/AccountContext";
 
+// Shared result card used by CSV import and Manual Entry
+function ImportResult({ result, onReset, resetLabel = "Import another file" }) {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Import Result</h2>
+      <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="bg-gray-800 rounded-lg p-3">
+          <p className="text-xs text-gray-400 mb-1">Total Rows</p>
+          <p className="text-xl font-bold">{result.total_rows}</p>
+        </div>
+        <div className="bg-green-900/30 border border-green-800 rounded-lg p-3">
+          <p className="text-xs text-green-400 mb-1">Imported</p>
+          <p className="text-xl font-bold text-green-300">{result.imported}</p>
+        </div>
+        <div className="bg-yellow-900/30 border border-yellow-800 rounded-lg p-3">
+          <p className="text-xs text-yellow-400 mb-1">Duplicates Skipped</p>
+          <p className="text-xl font-bold text-yellow-300">{result.skipped_duplicates}</p>
+        </div>
+      </div>
+
+      {result.transactions?.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-gray-400 text-xs uppercase border-b border-gray-800">
+                <th className="text-left py-2 pr-4">Date</th>
+                <th className="text-left py-2 pr-4">Description</th>
+                <th className="text-right py-2 pr-4">Amount</th>
+                <th className="text-left py-2">Category</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.transactions.map((t) => (
+                <tr key={t.id} className="border-b border-gray-800/50">
+                  <td className="py-1.5 pr-4 text-gray-400">{t.date}</td>
+                  <td className="py-1.5 pr-4 max-w-xs truncate">{t.raw_description}</td>
+                  <td className={`py-1.5 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {parseFloat(t.amount).toFixed(2)}
+                  </td>
+                  <td className="py-1.5">
+                    {t.category_id
+                      ? <span className="bg-indigo-900/50 text-indigo-300 text-xs px-2 py-0.5 rounded">mapped</span>
+                      : <span className="bg-yellow-900/50 text-yellow-300 text-xs px-2 py-0.5 rounded">unmapped</span>
+                    }
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <button
+        onClick={onReset}
+        className="text-sm text-gray-400 hover:text-white transition-colors"
+      >
+        {resetLabel}
+      </button>
+    </div>
+  );
+}
+
+// ── Today's date in YYYY-MM-DD
+const todayIso = () => new Date().toISOString().split("T")[0];
+
 export default function ImportPage() {
   const { accounts, selectedAccount, setSelectedAccount, fetchAccounts } = useAccounts();
   const [mode, setMode] = useState("file");
-  const [file, setFile] = useState(null);
-  const [rawCsv, setRawCsv] = useState("");
 
-  // Step 1: preview
-  const [preview, setPreview] = useState(null); // { headers, sample_rows, detected_* }
+  // ── CSV flow state ────────────────────────────────────────────────────────
+  const [file, setFile]       = useState(null);
+  const [rawCsv, setRawCsv]   = useState("");
+  const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
-
-  // Step 2: column mapping
   const [mapping, setMapping] = useState({ date: "", desc: "", amount: "", extra: [] });
+  const [result, setResult]   = useState(null);
+  const [error, setError]     = useState("");
+  const [importing, setImporting]   = useState(false);
+  const [remapping, setRemapping]   = useState(false);
 
-  // Step 3: result
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [importing, setImporting] = useState(false);
-  const [remapping, setRemapping] = useState(false);
+  // ── Manual entry state ────────────────────────────────────────────────────
+  const emptyManual = () => ({ date: todayIso(), description: "", amount: "" });
+  const [manualForm, setManualForm]     = useState(emptyManual());
+  const [manualResult, setManualResult] = useState(null);
+  const [manualError, setManualError]   = useState("");
+  const [manualSubmitting, setManualSubmitting] = useState(false);
 
   useEffect(() => { fetchAccounts(); }, []);
 
-  // Reset when account/mode changes
-  useEffect(() => { setPreview(null); setResult(null); setError(""); }, [selectedAccount, mode]);
+  // Reset state when account or mode changes
+  useEffect(() => {
+    setPreview(null);
+    setResult(null);
+    setError("");
+    setManualResult(null);
+    setManualError("");
+  }, [selectedAccount, mode]);
+
+  // ── CSV helpers ───────────────────────────────────────────────────────────
 
   const buildForm = () => {
     const form = new FormData();
@@ -36,9 +112,7 @@ export default function ImportPage() {
   const handlePreview = async (e) => {
     e.preventDefault();
     if (!selectedAccount) return;
-    setError("");
-    setResult(null);
-    setPreview(null);
+    setError(""); setResult(null); setPreview(null);
     setPreviewing(true);
     try {
       const { data } = await api.post(`/accounts/${selectedAccount.id}/import/preview`, buildForm());
@@ -58,8 +132,7 @@ export default function ImportPage() {
 
   const handleImport = async () => {
     if (!selectedAccount || !preview) return;
-    setError("");
-    setImporting(true);
+    setError(""); setImporting(true);
     try {
       const form = buildForm();
       form.append("col_date",        mapping.date);
@@ -90,26 +163,54 @@ export default function ImportPage() {
     }
   };
 
-  const toggleExtra = (col) => {
+  const toggleExtra = (col) =>
     setMapping((m) => ({
       ...m,
       extra: m.extra.includes(col) ? m.extra.filter((c) => c !== col) : [...m.extra, col],
     }));
-  };
 
   const canImport = mapping.date && mapping.desc && mapping.amount;
+
+  // ── Manual entry handler ──────────────────────────────────────────────────
+
+  const handleManualSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedAccount) return;
+    const amount = parseFloat(manualForm.amount);
+    if (isNaN(amount)) { setManualError("Enter a valid amount."); return; }
+    if (!manualForm.description.trim()) { setManualError("Description is required."); return; }
+    setManualError(""); setManualSubmitting(true);
+    try {
+      const { data } = await api.post(`/accounts/${selectedAccount.id}/import/auto`, {
+        transactions: [{
+          date:        manualForm.date,
+          description: manualForm.description.trim(),
+          amount,
+        }],
+      });
+      setManualResult(data);
+      fetchAccounts();
+    } catch (err) {
+      setManualError(err.response?.data?.detail || "Failed to add transaction.");
+    } finally {
+      setManualSubmitting(false);
+    }
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const TABS = [
+    { id: "file",   label: "📁 File Upload" },
+    { id: "paste",  label: "📋 Paste CSV" },
+    { id: "manual", label: "✏️ Manual Entry" },
+  ];
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">Smart Import</h1>
 
-      {/* ── Step 1: file / paste ── */}
+      {/* ── Account selector (always visible) ───────────────────────────── */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-indigo-400 bg-indigo-900/40 rounded-full w-5 h-5 flex items-center justify-center">1</span>
-          <span className="text-sm font-semibold text-gray-300">Upload or paste your bank export</span>
-        </div>
-
         <div className="flex flex-col gap-1">
           <label className="text-xs text-gray-400 uppercase tracking-wide">Target Account</label>
           <select
@@ -124,63 +225,143 @@ export default function ImportPage() {
           </select>
         </div>
 
-        <div className="flex gap-2">
-          {["file", "paste"].map((m) => (
+        {/* ── Tab switcher ─────────────────────────────────────────────── */}
+        <div className="flex gap-2 flex-wrap">
+          {TABS.map((t) => (
             <button
-              key={m}
-              onClick={() => setMode(m)}
+              key={t.id}
+              onClick={() => setMode(t.id)}
               className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-                mode === m ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"
+                mode === t.id
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-800 text-gray-400 hover:text-white"
               }`}
             >
-              {m === "file" ? "File Upload" : "Paste CSV"}
+              {t.label}
             </button>
           ))}
         </div>
 
-        <form onSubmit={handlePreview} className="space-y-4">
-          {mode === "file" ? (
-            <div>
-              <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">CSV File</label>
+        {/* ── CSV: File / Paste input ───────────────────────────────────── */}
+        {(mode === "file" || mode === "paste") && !result && (
+          <form onSubmit={handlePreview} className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-indigo-400 bg-indigo-900/40 rounded-full w-5 h-5 flex items-center justify-center">1</span>
+              <span className="text-sm font-semibold text-gray-300">Upload or paste your bank export</span>
+            </div>
+
+            {mode === "file" ? (
+              <div>
+                <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">CSV File</label>
+                <input
+                  type="file"
+                  accept=".csv,.tsv,text/csv,text/plain"
+                  onChange={(e) => { setFile(e.target.files[0]); setPreview(null); setResult(null); }}
+                  required
+                  className="block w-full text-sm text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-indigo-700 file:text-white file:text-sm hover:file:bg-indigo-600 cursor-pointer"
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Paste Bank Data</label>
+                <textarea
+                  value={rawCsv}
+                  onChange={(e) => { setRawCsv(e.target.value); setPreview(null); setResult(null); }}
+                  rows={8}
+                  placeholder={"Paste directly from your bank export.\nTab, comma, and semicolon separators are all supported."}
+                  required
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-y"
+                />
+              </div>
+            )}
+
+            {error && !preview && (
+              <div className="bg-red-900/40 border border-red-700 text-red-300 text-sm rounded px-3 py-2">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={previewing || !selectedAccount}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
+            >
+              {previewing ? "Analysing..." : "Analyse File →"}
+            </button>
+          </form>
+        )}
+
+        {/* ── Manual Entry form ─────────────────────────────────────────── */}
+        {mode === "manual" && !manualResult && (
+          <form onSubmit={handleManualSubmit} className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-indigo-400 bg-indigo-900/40 rounded-full w-5 h-5 flex items-center justify-center">✏</span>
+              <span className="text-sm font-semibold text-gray-300">Enter transaction details</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400 uppercase tracking-wide">Date</label>
+                <input
+                  type="date"
+                  value={manualForm.date}
+                  onChange={(e) => setManualForm((f) => ({ ...f, date: e.target.value }))}
+                  required
+                  className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1 sm:col-span-2">
+                <label className="text-xs text-gray-400 uppercase tracking-wide">Description</label>
+                <input
+                  type="text"
+                  value={manualForm.description}
+                  onChange={(e) => setManualForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="e.g. Amazon Prime, Salary…"
+                  required
+                  className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 max-w-xs">
+              <label className="text-xs text-gray-400 uppercase tracking-wide">
+                Amount
+                <span className="ml-1 text-gray-600 normal-case">(negative = expense, positive = income)</span>
+              </label>
               <input
-                type="file"
-                accept=".csv,.tsv,text/csv,text/plain"
-                onChange={(e) => { setFile(e.target.files[0]); setPreview(null); setResult(null); }}
+                type="number"
+                step="0.01"
+                value={manualForm.amount}
+                onChange={(e) => setManualForm((f) => ({ ...f, amount: e.target.value }))}
+                placeholder="-50.00"
                 required
-                className="block w-full text-sm text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-indigo-700 file:text-white file:text-sm hover:file:bg-indigo-600 cursor-pointer"
+                className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
-          ) : (
-            <div>
-              <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Paste Bank Data</label>
-              <textarea
-                value={rawCsv}
-                onChange={(e) => { setRawCsv(e.target.value); setPreview(null); setResult(null); }}
-                rows={8}
-                placeholder={"Paste directly from your bank export.\nTab, comma, and semicolon separators are all supported."}
-                required
-                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-y"
-              />
-            </div>
-          )}
 
-          {error && !preview && (
-            <div className="bg-red-900/40 border border-red-700 text-red-300 text-sm rounded px-3 py-2">
-              {error}
-            </div>
-          )}
+            <p className="text-xs text-gray-500">
+              Mapping rules will be applied automatically — category assigned by matching rules (same as CSV import).
+            </p>
 
-          <button
-            type="submit"
-            disabled={previewing || !selectedAccount}
-            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
-          >
-            {previewing ? "Analysing..." : "Analyse File →"}
-          </button>
-        </form>
+            {manualError && (
+              <div className="bg-red-900/40 border border-red-700 text-red-300 text-sm rounded px-3 py-2">
+                {manualError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={manualSubmitting || !selectedAccount}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
+            >
+              {manualSubmitting ? "Adding…" : "Add Transaction"}
+            </button>
+          </form>
+        )}
       </div>
 
-      {/* ── Step 2: column mapper ── */}
+      {/* ── CSV Step 2: column mapper ────────────────────────────────────── */}
       {preview && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2">
@@ -189,12 +370,11 @@ export default function ImportPage() {
             <span className="text-xs text-gray-500 ml-1">— {preview.headers.length} columns detected</span>
           </div>
 
-          {/* Column mapping selects */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
-              { key: "date",   label: "Date column",        required: true },
-              { key: "desc",   label: "Description column", required: true },
-              { key: "amount", label: "Amount column",      required: true },
+              { key: "date",   label: "Date column" },
+              { key: "desc",   label: "Description column" },
+              { key: "amount", label: "Amount column" },
             ].map(({ key, label }) => (
               <div key={key} className="flex flex-col gap-1">
                 <label className="text-xs text-gray-400">{label}</label>
@@ -214,7 +394,6 @@ export default function ImportPage() {
             ))}
           </div>
 
-          {/* Extra description columns */}
           <div>
             <p className="text-xs text-gray-400 mb-2">Extra columns to merge into description (optional)</p>
             <div className="flex flex-wrap gap-2">
@@ -237,7 +416,6 @@ export default function ImportPage() {
             </div>
           </div>
 
-          {/* Sample data preview */}
           <div>
             <p className="text-xs text-gray-400 mb-2">Sample rows ({preview.sample_rows.length})</p>
             <div className="overflow-x-auto rounded border border-gray-800">
@@ -256,8 +434,8 @@ export default function ImportPage() {
                         }`}
                       >
                         {h}
-                        {mapping.date === h && <span className="ml-1 text-indigo-400">(date)</span>}
-                        {mapping.desc === h && <span className="ml-1 text-indigo-400">(desc)</span>}
+                        {mapping.date === h   && <span className="ml-1 text-indigo-400">(date)</span>}
+                        {mapping.desc === h   && <span className="ml-1 text-indigo-400">(desc)</span>}
                         {mapping.amount === h && <span className="ml-1 text-indigo-400">(amount)</span>}
                         {mapping.extra.includes(h) && <span className="ml-1 text-yellow-400">(+desc)</span>}
                       </th>
@@ -320,63 +498,26 @@ export default function ImportPage() {
         </div>
       )}
 
-      {/* ── Step 3: result ── */}
+      {/* ── CSV result ───────────────────────────────────────────────────── */}
       {result && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Import Result</h2>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="bg-gray-800 rounded-lg p-3">
-              <p className="text-xs text-gray-400 mb-1">Total Rows</p>
-              <p className="text-xl font-bold">{result.total_rows}</p>
-            </div>
-            <div className="bg-green-900/30 border border-green-800 rounded-lg p-3">
-              <p className="text-xs text-green-400 mb-1">Imported</p>
-              <p className="text-xl font-bold text-green-300">{result.imported}</p>
-            </div>
-            <div className="bg-yellow-900/30 border border-yellow-800 rounded-lg p-3">
-              <p className="text-xs text-yellow-400 mb-1">Duplicates Skipped</p>
-              <p className="text-xl font-bold text-yellow-300">{result.skipped_duplicates}</p>
-            </div>
-          </div>
+        <ImportResult
+          result={result}
+          onReset={() => setResult(null)}
+          resetLabel="Import another file"
+        />
+      )}
 
-          {result.transactions.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-gray-400 text-xs uppercase border-b border-gray-800">
-                    <th className="text-left py-2 pr-4">Date</th>
-                    <th className="text-left py-2 pr-4">Description</th>
-                    <th className="text-right py-2 pr-4">Amount</th>
-                    <th className="text-left py-2">Category</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.transactions.map((t) => (
-                    <tr key={t.id} className="border-b border-gray-800/50">
-                      <td className="py-1.5 pr-4 text-gray-400">{t.date}</td>
-                      <td className="py-1.5 pr-4 max-w-xs truncate">{t.raw_description}</td>
-                      <td className={`py-1.5 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}>
-                        {parseFloat(t.amount).toFixed(2)}
-                      </td>
-                      <td className="py-1.5">
-                        {t.category_id
-                          ? <span className="bg-indigo-900/50 text-indigo-300 text-xs px-2 py-0.5 rounded">mapped</span>
-                          : <span className="bg-yellow-900/50 text-yellow-300 text-xs px-2 py-0.5 rounded">unmapped</span>
-                        }
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <button
-            onClick={() => setResult(null)}
-            className="text-sm text-gray-400 hover:text-white transition-colors"
-          >
-            Import another file
-          </button>
+      {/* ── Manual entry result ──────────────────────────────────────────── */}
+      {manualResult && (
+        <div className="space-y-4">
+          <ImportResult
+            result={manualResult}
+            onReset={() => {
+              setManualResult(null);
+              setManualForm(emptyManual());
+            }}
+            resetLabel="Add another transaction"
+          />
         </div>
       )}
     </div>

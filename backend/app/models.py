@@ -154,3 +154,25 @@ class MappingRule(Base):
 
     def __repr__(self) -> str:
         return f"<MappingRule id={self.id} type={self.match_type.value} pattern={self.pattern!r}>"
+
+
+class InvestmentSnapshot(Base):
+    """
+    Stores the user-reported market value of an investment category for a given year.
+    One row per (account, category, year) — upserted whenever the user updates the value.
+    """
+    __tablename__ = "investment_snapshots"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id  = Column(UUID(as_uuid=True), ForeignKey("accounts.id",   ondelete="CASCADE"), nullable=False, index=True)
+    category_id = Column(UUID(as_uuid=True), ForeignKey("categories.id", ondelete="CASCADE"), nullable=False, index=True)
+    year        = Column(Integer,            nullable=False)
+    value       = Column(Numeric(14, 2),     nullable=False)
+    updated_at  = Column(DateTime,           nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "category_id", "year", name="uq_investment_snapshot"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<InvestmentSnapshot cat={self.category_id} year={self.year} value={self.value}>"
