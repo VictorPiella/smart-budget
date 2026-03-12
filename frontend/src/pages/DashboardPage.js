@@ -4,7 +4,8 @@ import { useAccounts } from "../context/AccountContext";
 import { useNavigate } from "react-router-dom";
 
 export default function DashboardPage() {
-  const { accounts, selectedAccount, fetchAccounts, setSelectedAccount } = useAccounts();
+  const { accounts, selectedAccount, fetchAccounts, setSelectedAccount } =
+    useAccounts();
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loadingTxns, setLoadingTxns] = useState(false);
@@ -14,7 +15,9 @@ export default function DashboardPage() {
   const [accError, setAccError] = useState("");
   const navigate = useNavigate();
 
-  useEffect(() => { fetchAccounts(); }, []);
+  useEffect(() => {
+    fetchAccounts();
+  }, []);
 
   useEffect(() => {
     if (!selectedAccount) return;
@@ -23,7 +26,10 @@ export default function DashboardPage() {
       api.get(`/accounts/${selectedAccount.id}/transactions`),
       api.get(`/accounts/${selectedAccount.id}/categories`),
     ])
-      .then(([txnRes, catRes]) => { setTransactions(txnRes.data); setCategories(catRes.data); })
+      .then(([txnRes, catRes]) => {
+        setTransactions(txnRes.data);
+        setCategories(catRes.data);
+      })
       .catch(() => setTransactions([]))
       .finally(() => setLoadingTxns(false));
   }, [selectedAccount]);
@@ -33,7 +39,10 @@ export default function DashboardPage() {
     setAccError("");
     setCreating(true);
     try {
-      await api.post("/accounts", { name: newAccName, currency: newAccCurrency });
+      await api.post("/accounts", {
+        name: newAccName,
+        currency: newAccCurrency,
+      });
       setNewAccName("");
       await fetchAccounts();
     } catch (err) {
@@ -44,7 +53,8 @@ export default function DashboardPage() {
   };
 
   const handleDeleteAccount = async (id) => {
-    if (!window.confirm("Delete this account and all its transactions?")) return;
+    if (!window.confirm("Delete this account and all its transactions?"))
+      return;
     await api.delete(`/accounts/${id}`);
     const updated = accounts.filter((a) => a.id !== id);
     if (selectedAccount?.id === id) setSelectedAccount(updated[0] || null);
@@ -75,20 +85,37 @@ export default function DashboardPage() {
   };
 
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ date: "", raw_description: "", amount: "", category_id: "" });
+  const [editForm, setEditForm] = useState({
+    date: "",
+    raw_description: "",
+    amount: "",
+    category_id: "",
+  });
   const [editSaving, setEditSaving] = useState(false);
 
   const startEdit = (t) => {
     setEditingId(t.id);
-    setEditForm({ date: t.date, raw_description: t.raw_description, amount: t.amount, category_id: t.category_id || "" });
+    setEditForm({
+      date: t.date,
+      raw_description: t.raw_description,
+      amount: t.amount,
+      category_id: t.category_id || "",
+    });
   };
 
   const handleSaveEdit = async (txnId) => {
     setEditSaving(true);
     try {
-      const payload = { date: editForm.date, raw_description: editForm.raw_description, amount: parseFloat(editForm.amount) };
+      const payload = {
+        date: editForm.date,
+        raw_description: editForm.raw_description,
+        amount: parseFloat(editForm.amount),
+      };
       if (editForm.category_id) payload.category_id = editForm.category_id;
-      const { data } = await api.patch(`/accounts/${selectedAccount.id}/transactions/${txnId}`, payload);
+      const { data } = await api.patch(
+        `/accounts/${selectedAccount.id}/transactions/${txnId}`,
+        payload,
+      );
       setTransactions((prev) => prev.map((t) => (t.id === txnId ? data : t)));
       setEditingId(null);
     } finally {
@@ -97,8 +124,12 @@ export default function DashboardPage() {
   };
 
   const catMap = Object.fromEntries(categories.map((c) => [c.id, c]));
-  const totalIncome = transactions.filter((t) => t.amount > 0).reduce((s, t) => s + parseFloat(t.amount), 0);
-  const totalExpenses = transactions.filter((t) => t.amount < 0).reduce((s, t) => s + parseFloat(t.amount), 0);
+  const totalIncome = transactions
+    .filter((t) => t.amount > 0)
+    .reduce((s, t) => s + parseFloat(t.amount), 0);
+  const totalExpenses = transactions
+    .filter((t) => t.amount < 0)
+    .reduce((s, t) => s + parseFloat(t.amount), 0);
   const unmapped = transactions.filter((t) => !t.category_id).length;
 
   return (
@@ -107,9 +138,13 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">Accounts</h2>
+          <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">
+            Accounts
+          </h2>
           {accounts.length === 0 && (
-            <p className="text-gray-500 text-sm mb-3">No accounts yet. Create one below.</p>
+            <p className="text-gray-500 text-sm mb-3">
+              No accounts yet. Create one below.
+            </p>
           )}
           <ul className="space-y-2 mb-4">
             {accounts.map((a) => (
@@ -130,7 +165,10 @@ export default function DashboardPage() {
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleSaveRename(a.id, e);
-                      if (e.key === "Escape") { e.stopPropagation(); setRenamingAccId(null); }
+                      if (e.key === "Escape") {
+                        e.stopPropagation();
+                        setRenamingAccId(null);
+                      }
                     }}
                     className="flex-1 bg-gray-700 border border-indigo-500 rounded px-2 py-0.5 text-sm focus:outline-none mr-2"
                   />
@@ -139,7 +177,9 @@ export default function DashboardPage() {
                 )}
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-400">{a.currency}</span>
-                  <span className={`text-sm font-mono ${parseFloat(a.balance) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  <span
+                    className={`text-sm font-mono ${parseFloat(a.balance) >= 0 ? "text-green-400" : "text-red-400"}`}
+                  >
                     {parseFloat(a.balance).toFixed(2)}
                   </span>
                   {renamingAccId === a.id ? (
@@ -152,7 +192,10 @@ export default function DashboardPage() {
                         Save
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); setRenamingAccId(null); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenamingAccId(null);
+                        }}
                         className="text-gray-500 hover:text-gray-300 text-xs transition-colors"
                       >
                         Cancel
@@ -168,7 +211,10 @@ export default function DashboardPage() {
                         ✎
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteAccount(a.id); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteAccount(a.id);
+                        }}
                         className="text-gray-600 hover:text-red-400 text-xs transition-colors"
                         title="Delete account"
                       >
@@ -195,7 +241,7 @@ export default function DashboardPage() {
               onChange={(e) => setNewAccCurrency(e.target.value)}
               className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
-              {["USD", "EUR", "GBP", "CHF", "CAD"].map((c) => (
+              {["EUR", "USD", "GBP", "CHF", "CAD"].map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </select>
@@ -217,15 +263,21 @@ export default function DashboardPage() {
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-green-900/30 border border-green-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-green-400 mb-1">Income</p>
-                <p className="font-mono text-green-300 font-semibold">{totalIncome.toFixed(2)}</p>
+                <p className="font-mono text-green-300 font-semibold">
+                  {totalIncome.toFixed(2)}
+                </p>
               </div>
               <div className="bg-red-900/30 border border-red-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-red-400 mb-1">Expenses</p>
-                <p className="font-mono text-red-300 font-semibold">{totalExpenses.toFixed(2)}</p>
+                <p className="font-mono text-red-300 font-semibold">
+                  {totalExpenses.toFixed(2)}
+                </p>
               </div>
               <div className="bg-yellow-900/30 border border-yellow-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-yellow-400 mb-1">Unmapped</p>
-                <p className="font-mono text-yellow-300 font-semibold">{unmapped}</p>
+                <p className="font-mono text-yellow-300 font-semibold">
+                  {unmapped}
+                </p>
               </div>
             </div>
             <div className="flex gap-2 flex-wrap">
@@ -254,7 +306,9 @@ export default function DashboardPage() {
           {loadingTxns ? (
             <p className="text-gray-500 text-sm">Loading...</p>
           ) : transactions.length === 0 ? (
-            <p className="text-gray-500 text-sm">No transactions yet. Import a CSV to get started.</p>
+            <p className="text-gray-500 text-sm">
+              No transactions yet. Import a CSV to get started.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -271,21 +325,34 @@ export default function DashboardPage() {
                   {transactions.slice(0, 20).map((t) => {
                     const isEditing = editingId === t.id;
                     return (
-                      <tr key={t.id} className={`border-b border-gray-800/50 ${isEditing ? "bg-gray-800/60" : "hover:bg-gray-800/30"}`}>
+                      <tr
+                        key={t.id}
+                        className={`border-b border-gray-800/50 ${isEditing ? "bg-gray-800/60" : "hover:bg-gray-800/30"}`}
+                      >
                         {isEditing ? (
                           <>
                             <td className="py-1.5 pr-3">
                               <input
                                 type="date"
                                 value={editForm.date}
-                                onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    date: e.target.value,
+                                  }))
+                                }
                                 className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 w-32"
                               />
                             </td>
                             <td className="py-1.5 pr-3">
                               <input
                                 value={editForm.raw_description}
-                                onChange={(e) => setEditForm((f) => ({ ...f, raw_description: e.target.value }))}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    raw_description: e.target.value,
+                                  }))
+                                }
                                 className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full min-w-[180px]"
                               />
                             </td>
@@ -294,19 +361,31 @@ export default function DashboardPage() {
                                 type="number"
                                 step="0.01"
                                 value={editForm.amount}
-                                onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    amount: e.target.value,
+                                  }))
+                                }
                                 className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 w-28 text-right"
                               />
                             </td>
                             <td className="py-1.5 pr-3">
                               <select
                                 value={editForm.category_id}
-                                onChange={(e) => setEditForm((f) => ({ ...f, category_id: e.target.value }))}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    category_id: e.target.value,
+                                  }))
+                                }
                                 className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               >
                                 <option value="">— unmapped —</option>
                                 {categories.map((c) => (
-                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                  <option key={c.id} value={c.id}>
+                                    {c.name}
+                                  </option>
                                 ))}
                               </select>
                             </td>
@@ -328,23 +407,51 @@ export default function DashboardPage() {
                           </>
                         ) : (
                           <>
-                            <td className="py-2 pr-4 text-gray-400 whitespace-nowrap">{t.date}</td>
-                            <td className="py-2 pr-4 max-w-xs truncate">{t.raw_description}</td>
-                            <td className={`py-2 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                            <td className="py-2 pr-4 text-gray-400 whitespace-nowrap">
+                              {t.date}
+                            </td>
+                            <td className="py-2 pr-4 max-w-xs truncate">
+                              {t.raw_description}
+                            </td>
+                            <td
+                              className={`py-2 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}
+                            >
                               {parseFloat(t.amount).toFixed(2)}
                             </td>
                             <td className="py-2 pr-4">
                               <div className="flex items-center gap-1 flex-wrap">
-                                {t.category_id ? (() => {
-                                  const cat = catMap[t.category_id];
-                                  return cat ? (
-                                    <span className="text-xs px-2 py-0.5 rounded font-medium" style={{ backgroundColor: `${cat.color}30`, color: cat.color, border: `1px solid ${cat.color}60` }}>
-                                      {cat.name}
-                                    </span>
-                                  ) : <span className="bg-indigo-900/50 text-indigo-300 text-xs px-2 py-0.5 rounded">mapped</span>;
-                                })() : <span className="bg-yellow-900/50 text-yellow-300 text-xs px-2 py-0.5 rounded">unmapped</span>}
+                                {t.category_id ? (
+                                  (() => {
+                                    const cat = catMap[t.category_id];
+                                    return cat ? (
+                                      <span
+                                        className="text-xs px-2 py-0.5 rounded font-medium"
+                                        style={{
+                                          backgroundColor: `${cat.color}30`,
+                                          color: cat.color,
+                                          border: `1px solid ${cat.color}60`,
+                                        }}
+                                      >
+                                        {cat.name}
+                                      </span>
+                                    ) : (
+                                      <span className="bg-indigo-900/50 text-indigo-300 text-xs px-2 py-0.5 rounded">
+                                        mapped
+                                      </span>
+                                    );
+                                  })()
+                                ) : (
+                                  <span className="bg-yellow-900/50 text-yellow-300 text-xs px-2 py-0.5 rounded">
+                                    unmapped
+                                  </span>
+                                )}
                                 {t.is_manual && (
-                                  <span className="text-xs text-gray-500 bg-gray-800 border border-gray-700 px-1 py-0.5 rounded" title="Manually assigned — protected from auto-remap">M</span>
+                                  <span
+                                    className="text-xs text-gray-500 bg-gray-800 border border-gray-700 px-1 py-0.5 rounded"
+                                    title="Manually assigned — protected from auto-remap"
+                                  >
+                                    M
+                                  </span>
                                 )}
                               </div>
                             </td>
@@ -364,7 +471,9 @@ export default function DashboardPage() {
                 </tbody>
               </table>
               {transactions.length > 20 && (
-                <p className="text-gray-500 text-xs mt-2">Showing 20 of {transactions.length} transactions.</p>
+                <p className="text-gray-500 text-xs mt-2">
+                  Showing 20 of {transactions.length} transactions.
+                </p>
               )}
             </div>
           )}
