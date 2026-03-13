@@ -266,11 +266,11 @@ export default function InvestmentPage() {
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
           <h2 className="font-semibold text-gray-200 mb-1">Portfolio Summary</h2>
           <p className="text-xs text-gray-500 mb-4">
-            All-time cumulative contributions vs. latest recorded value per category.
+            Total cash deployed vs. latest recorded value — all-time return on invested capital.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Total invested</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Total invested (cash)</p>
               <p className="text-lg font-bold text-white">{fmt(portfolioContributed, currency)}</p>
             </div>
             <div>
@@ -311,9 +311,16 @@ export default function InvestmentPage() {
         const displayVal  = getDisplayValue(cat.id);
         const currentVal  = parseFloat(displayVal.replace(",", "."));
         const hasVal      = !isNaN(currentVal) && currentVal >= 0 && displayVal !== "";
-        const gain        = hasVal ? currentVal - cumulative : null;
-        const gainPct     = cumulative > 0 && gain != null
-          ? ((gain / cumulative) * 100).toFixed(1) : null;
+
+        // Period return for the card chip: use prev-year snapshot as opening value if available,
+        // otherwise fall back to all-time cumulative (first year / no prev snapshot recorded).
+        const prevYearRow    = cs?.years.find((r) => r.year === year - 1);
+        const cardCostBasis  = prevYearRow?.snapshot_value != null
+          ? prevYearRow.snapshot_value + contributed
+          : cumulative;
+        const gain    = hasVal ? currentVal - cardCostBasis : null;
+        const gainPct = cardCostBasis > 0 && gain != null
+          ? ((gain / cardCostBasis) * 100).toFixed(1) : null;
 
         const isSaving    = savingFor === cat.id;
         const isDirty     = dirtyInputs[`${cat.id}-${year}`] !== undefined;
@@ -443,7 +450,7 @@ export default function InvestmentPage() {
                         <th className="text-right pb-2 pr-4">Contributed</th>
                         <th className="text-right pb-2 pr-4">Cumulative</th>
                         <th className="text-right pb-2 pr-4">Value</th>
-                        <th className="text-right pb-2 pr-4">Gain / Loss</th>
+                        <th className="text-right pb-2 pr-4">Annual Gain</th>
                         <th className="text-right pb-2 pr-4">%</th>
                         <th className="text-right pb-2">Recorded</th>
                       </tr>
@@ -451,10 +458,16 @@ export default function InvestmentPage() {
                     <tbody>
                       {allYears.map((row) => {
                         const isCurrent = row.year === year;
-                        const g = row.snapshot_value != null
-                          ? row.snapshot_value - row.cumulative : null;
-                        const gPct = row.cumulative > 0 && g != null
-                          ? ((g / row.cumulative) * 100).toFixed(1) : null;
+
+                        // Period return: use previous year's snapshot as the opening value.
+                        // If prev snapshot is missing (first year or gap), fall back to cumulative.
+                        const prevRow     = allYears.find((r) => r.year === row.year - 1);
+                        const costBasis   = prevRow?.snapshot_value != null
+                          ? prevRow.snapshot_value + row.contributed
+                          : row.cumulative;
+                        const g    = row.snapshot_value != null ? row.snapshot_value - costBasis : null;
+                        const gPct = costBasis > 0 && g != null
+                          ? ((g / costBasis) * 100).toFixed(1) : null;
                         const dateFmt = fmtSnapDate(row.snapshot_updated_at, row.year);
                         return (
                           <tr key={row.year}
@@ -500,6 +513,10 @@ export default function InvestmentPage() {
                     </tbody>
                   </table>
                 </div>
+                <p className="text-xs text-gray-700 mt-2 italic">
+                  Annual gain = year-end value − (prior year value + new contributions).
+                  First year or years without a prior snapshot use total invested as basis.
+                </p>
               </div>
             )}
 
