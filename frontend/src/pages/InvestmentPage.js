@@ -29,6 +29,8 @@ function fmtSnapDate(iso, snapshotYear) {
     hour: "2-digit", minute: "2-digit" });
 }
 
+const THIS_YEAR = new Date().getFullYear();
+
 export default function InvestmentPage() {
   const { selectedAccount } = useAccounts();
   const currency = selectedAccount?.currency || "EUR";
@@ -366,7 +368,7 @@ export default function InvestmentPage() {
             <div className="border-t border-gray-800 pt-4 flex flex-col sm:flex-row sm:items-end gap-4">
               <div className="flex-1 space-y-1">
                 <label className="text-xs text-gray-500 uppercase tracking-wide">
-                  Value at end of {year}
+                  {year === THIS_YEAR ? "Current value" : `Value at end of ${year}`}
                   {isDirty && !isSaving && (
                     <span className="ml-2 text-yellow-500 normal-case text-xs">● unsaved</span>
                   )}
@@ -433,7 +435,7 @@ export default function InvestmentPage() {
                         <th className="text-left pb-2 pr-4">Year</th>
                         <th className="text-right pb-2 pr-4">Contributed</th>
                         <th className="text-right pb-2 pr-4">Cumulative</th>
-                        <th className="text-right pb-2 pr-4">Year-end value</th>
+                        <th className="text-right pb-2 pr-4">Value</th>
                         <th className="text-right pb-2 pr-4">Gain / Loss</th>
                         <th className="text-right pb-2">Recorded</th>
                       </tr>
@@ -454,7 +456,7 @@ export default function InvestmentPage() {
                           >
                             <td className={`py-2 pr-4 font-medium ${isCurrent ? "text-indigo-300" : "text-gray-300"}`}>
                               {row.year}
-                              {isCurrent && <span className="ml-1.5 text-xs font-normal text-indigo-500">←</span>}
+                              {isCurrent && <span className="ml-1.5 text-xs font-normal text-indigo-400">(current)</span>}
                             </td>
                             <td className="py-2 pr-4 text-right text-gray-400">
                               {fmt(row.contributed, currency)}

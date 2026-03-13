@@ -874,25 +874,31 @@ def get_investment_summary(
     if not ids:
         return []
 
+    # Build per-element params — SQLAlchemy 2.0 text() cannot bind Python lists
+    # for PostgreSQL ANY(), so we expand to a named IN clause instead.
+    id_strs   = [str(i) for i in ids]
+    id_params = {f"cid_{i}": v for i, v in enumerate(id_strs)}
+    in_clause = ", ".join(f":cid_{i}" for i in range(len(id_strs)))
+
     # Yearly contributions per category (all time)
-    contrib_rows = db.execute(text("""
+    contrib_rows = db.execute(text(f"""
         SELECT category_id,
                EXTRACT(year FROM date)::int AS yr,
                SUM(amount)                  AS total
         FROM   transactions
         WHERE  account_id   = :account_id
-          AND  category_id  = ANY(:ids)
+          AND  category_id::text IN ({in_clause})
         GROUP  BY category_id, EXTRACT(year FROM date)
         ORDER  BY category_id, yr
-    """), {"account_id": str(account_id), "ids": [str(i) for i in ids]}).fetchall()
+    """), {"account_id": str(account_id), **id_params}).fetchall()
 
     # Stored snapshots
-    snap_rows = db.execute(text("""
+    snap_rows = db.execute(text(f"""
         SELECT category_id, year, value, updated_at
         FROM   investment_snapshots
         WHERE  account_id  = :account_id
-          AND  category_id = ANY(:ids)
-    """), {"account_id": str(account_id), "ids": [str(i) for i in ids]}).fetchall()
+          AND  category_id::text IN ({in_clause})
+    """), {"account_id": str(account_id), **id_params}).fetchall()
 
     # Index contributions by (cat_id, year)
     contrib_map: Dict[str, Dict[int, float]] = {}
