@@ -1,24 +1,28 @@
+# syntax=docker/dockerfile:1
+# ^ enables BuildKit cache mounts (--mount=type=cache) — keep this as the first line.
+# Build: DOCKER_BUILDKIT=1 docker build -f Dockerfile.prod -t yourname/smart-budget .
+
 # ── Stage 1: Build React frontend ─────────────────────────────────────────────
 FROM node:20-alpine AS frontend-build
 
 WORKDIR /frontend
 COPY frontend/package.json ./
-RUN npm install
+# Cache mount keeps ~/.npm across builds — npm install stays fast even when
+# the layer is invalidated by an upstream change.
+RUN --mount=type=cache,target=/root/.npm \
+    npm install
 COPY frontend/ .
 RUN npm run build
 
-# ── Stage 2: All-in-one image (postgres + nginx + uvicorn) ────────────────────
+# ── Stage 2: All-in-one runtime (postgres + nginx + uvicorn + telegram bot) ────
 FROM python:3.11-slim
 
-# Tell Qt/OpenCV to render offscreen — prevents "libxcb" errors in headless containers.
+# Tell Qt/OpenCV to render offscreen — prevents "libxcb" errors in headless Docker.
 ENV QT_QPA_PLATFORM=offscreen \
-    MPLBACKEND=Agg
+    MPLBACKEND=Agg \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install postgres, nginx, supervisor.
-# Save the installed PG version to /etc/pg_version so entrypoint can find
-# the binaries regardless of which version apt resolves to.
-# libxcb1 + libgl1 + libglib2.0-0 are required by docling's image-processing
-# stack (pypdfium2 / OpenCV) even in headless mode.
+# System packages: postgres, nginx, supervisor + X11/GL shims for docling.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       postgresql nginx supervisor \
@@ -29,22 +33,27 @@ RUN apt-get update \
  && pg_dropcluster --stop "$(cat /etc/pg_version)" main 2>/dev/null || true \
  && rm -rf /var/lib/apt/lists/*
 
-# Backend deps
+# ── Backend Python deps ────────────────────────────────────────────────────────
 WORKDIR /app
 COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Cache mount: downloaded wheels are reused across builds even if this layer is
+# invalidated. No --no-cache-dir here — the mount cache is separate from the image.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 COPY backend/app/ ./app/
 
-# Frontend static files from build stage
+# ── Frontend static files ──────────────────────────────────────────────────────
 COPY --from=frontend-build /frontend/build /usr/share/nginx/html
 
-# Telegram bot — copy requirements first so pip layer is cached independently
-# of changes to bot.py / pdf_processor.py (same pattern as backend above)
+# ── Telegram bot Python deps ───────────────────────────────────────────────────
+# docling pulls PyTorch (~2 GB). The cache mount means this only downloads once —
+# subsequent builds reuse the cached wheels even if upstream layers changed.
 COPY telegram-bot/requirements.txt /telegram-bot/requirements.txt
-RUN pip install --no-cache-dir -r /telegram-bot/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r /telegram-bot/requirements.txt
 COPY telegram-bot/ /telegram-bot/
 
-# Configs
+# ── Config files ───────────────────────────────────────────────────────────────
 COPY nginx/nginx.combined.conf /etc/nginx/sites-available/default
 COPY supervisord.conf          /etc/supervisor/conf.d/supervisord.conf
 COPY wait-for-postgres.sh      /wait-for-postgres.sh
@@ -55,5 +64,4 @@ RUN chmod +x /wait-for-postgres.sh /docker-entrypoint.sh /start-telegram-bot.sh 
  && mkdir -p /var/log/supervisor /uploads
 
 EXPOSE 80
-
 CMD ["/docker-entrypoint.sh"]
