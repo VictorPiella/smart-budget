@@ -221,8 +221,15 @@ export default function InvestmentPage() {
           <button onClick={() => setYear((y) => y - 1)}
             className="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm">←</button>
           <span className="text-gray-200 font-medium w-12 text-center">{year}</span>
-          <button onClick={() => setYear((y) => y + 1)}
-            className="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm">→</button>
+          <button
+            onClick={() => setYear((y) => y + 1)}
+            disabled={year >= THIS_YEAR}
+            className={`px-2 py-1 rounded text-sm transition-colors ${
+              year >= THIS_YEAR
+                ? "bg-gray-800/40 text-gray-700 cursor-not-allowed"
+                : "bg-gray-800 hover:bg-gray-700 text-gray-300"
+            }`}
+          >→</button>
         </div>
       </div>
 
@@ -429,7 +436,7 @@ export default function InvestmentPage() {
               <div className="border-t border-gray-800 pt-4">
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">Year-over-Year</p>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[580px]">
+                  <table className="w-full text-sm min-w-[680px]">
                     <thead>
                       <tr className="text-xs text-gray-500 uppercase border-b border-gray-800">
                         <th className="text-left pb-2 pr-4">Year</th>
@@ -437,6 +444,7 @@ export default function InvestmentPage() {
                         <th className="text-right pb-2 pr-4">Cumulative</th>
                         <th className="text-right pb-2 pr-4">Value</th>
                         <th className="text-right pb-2 pr-4">Gain / Loss</th>
+                        <th className="text-right pb-2 pr-4">%</th>
                         <th className="text-right pb-2">Recorded</th>
                       </tr>
                     </thead>
@@ -473,11 +481,13 @@ export default function InvestmentPage() {
                               {g != null ? (
                                 <span className={g >= 0 ? "text-green-400" : "text-red-400"}>
                                   {g >= 0 ? "+" : ""}{fmt(g, currency)}
-                                  {gPct != null && (
-                                    <span className="text-xs ml-1 opacity-75">
-                                      ({g >= 0 ? "+" : ""}{gPct}%)
-                                    </span>
-                                  )}
+                                </span>
+                              ) : <span className="text-gray-600">—</span>}
+                            </td>
+                            <td className="py-2 pr-4 text-right">
+                              {gPct != null ? (
+                                <span className={`text-sm font-semibold ${g >= 0 ? "text-green-400" : "text-red-400"}`}>
+                                  {g >= 0 ? "+" : ""}{gPct}%
                                 </span>
                               ) : <span className="text-gray-600">—</span>}
                             </td>

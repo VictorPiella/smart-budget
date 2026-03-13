@@ -921,7 +921,8 @@ def get_investment_summary(
         cumulative    = 0.0
         year_rows     = []
         for yr in all_years:
-            contributed = contrib_years.get(yr, 0.0)
+            # abs() so investment expenses (negative amounts) show as positive contributions
+            contributed = abs(contrib_years.get(yr, 0.0))
             cumulative += contributed
             snap        = snap_years.get(yr)
             year_rows.append(InvestmentYearRow(

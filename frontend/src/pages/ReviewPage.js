@@ -5,8 +5,10 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 
-const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const PER_PAGE = 50;
+const MONTHS    = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const PER_PAGE  = 50;
+const THIS_YEAR  = new Date().getFullYear();
+const THIS_MONTH = new Date().getMonth() + 1;
 
 export default function ReviewPage() {
   const { selectedAccount } = useAccounts();
@@ -77,14 +79,17 @@ export default function ReviewPage() {
 
   // ── Navigation helpers ───────────────────────────────────────────────────
   const prevYear = () => setYear((y) => y - 1);
-  const nextYear = () => setYear((y) => y + 1);
+  const nextYear = () => { if (year < THIS_YEAR) setYear((y) => y + 1); };
+  const canGoNextYear = year < THIS_YEAR;
 
   const prevMonth = () => {
     setPage(1);
     if (month === 1) { setMonth(12); setYear((y) => y - 1); }
     else setMonth((m) => m - 1);
   };
+  const canGoNextMonth = !(year === THIS_YEAR && month >= THIS_MONTH);
   const nextMonth = () => {
+    if (!canGoNextMonth) return;
     setPage(1);
     if (month === 12) { setMonth(1); setYear((y) => y + 1); }
     else setMonth((m) => m + 1);
@@ -128,8 +133,9 @@ export default function ReviewPage() {
         month:    MONTHS[i],
         income:   item.income,
         expenses: item.expenses,
+        savings:  Math.round((item.income - item.expenses) * 100) / 100,
       }))
-    : MONTHS.map((m) => ({ month: m, income: 0, expenses: 0 }));
+    : MONTHS.map((m) => ({ month: m, income: 0, expenses: 0, savings: 0 }));
 
   // ── Pivot rows (from summary) ────────────────────────────────────────────
   const pivotRows = summaryData?.pivot ?? [];
@@ -171,7 +177,13 @@ export default function ReviewPage() {
           <div className="flex items-center gap-1">
             <button onClick={prevYear} className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1.5 rounded text-sm transition-colors">←</button>
             <span className="bg-gray-800 text-white px-3 py-1.5 rounded text-sm font-mono min-w-[3.5rem] text-center">{year}</span>
-            <button onClick={nextYear} className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1.5 rounded text-sm transition-colors">→</button>
+            <button
+              onClick={nextYear}
+              disabled={!canGoNextYear}
+              className={`px-2 py-1.5 rounded text-sm transition-colors ${
+                canGoNextYear ? "bg-gray-800 hover:bg-gray-700 text-gray-300" : "bg-gray-800/40 text-gray-700 cursor-not-allowed"
+              }`}
+            >→</button>
           </div>
 
           {/* Month navigation (monthly view only) */}
@@ -179,7 +191,13 @@ export default function ReviewPage() {
             <div className="flex items-center gap-1">
               <button onClick={prevMonth} className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1.5 rounded text-sm transition-colors">←</button>
               <span className="bg-gray-800 text-white px-3 py-1.5 rounded text-sm min-w-[3rem] text-center">{MONTHS[month - 1]}</span>
-              <button onClick={nextMonth} className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1.5 rounded text-sm transition-colors">→</button>
+              <button
+                onClick={nextMonth}
+                disabled={!canGoNextMonth}
+                className={`px-2 py-1.5 rounded text-sm transition-colors ${
+                  canGoNextMonth ? "bg-gray-800 hover:bg-gray-700 text-gray-300" : "bg-gray-800/40 text-gray-700 cursor-not-allowed"
+                }`}
+              >→</button>
             </div>
           )}
         </div>
@@ -200,6 +218,7 @@ export default function ReviewPage() {
             <Legend />
             <Line type="monotone" dataKey="income"   stroke="#34d399" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="expenses" stroke="#f87171" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="savings"  stroke="#818cf8" strokeWidth={2} dot={false} strokeDasharray="5 3" />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -262,6 +281,38 @@ export default function ReviewPage() {
                     </td>
                   </tr>
                 ))}
+
+                {/* ── Savings summary row ── income − expenses per month ── */}
+                {summaryData && (() => {
+                  const savings = summaryData.monthly_chart.map(
+                    (item) => Math.round((item.income - item.expenses) * 100) / 100
+                  );
+                  const total = Math.round(savings.reduce((a, b) => a + b, 0) * 100) / 100;
+                  return (
+                    <tr className="border-t-2 border-gray-600 bg-gray-800/40 font-semibold">
+                      <td className="py-2.5 pr-4 text-indigo-300 text-sm tracking-wide">
+                        Savings
+                      </td>
+                      {savings.map((v, i) => (
+                        <td
+                          key={i}
+                          className={`py-2.5 px-2 text-right font-mono text-xs cursor-pointer hover:bg-gray-700/50 rounded ${
+                            v < 0 ? "text-red-400" : v > 0 ? "text-green-400" : "text-gray-600"
+                          }`}
+                          onClick={() => jumpToMonth(i)}
+                          title={`View ${MONTHS[i]} ${year}`}
+                        >
+                          {v !== 0 ? v.toFixed(0) : "—"}
+                        </td>
+                      ))}
+                      <td className={`py-2.5 pl-4 text-right font-mono font-bold ${
+                        total < 0 ? "text-red-400" : "text-green-400"
+                      }`}>
+                        {total.toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })()}
               </tbody>
             </table>
           )}
