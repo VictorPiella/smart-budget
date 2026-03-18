@@ -462,10 +462,15 @@ def parse_csv_content(
     """
     reader, _ = _read_csv(content)
 
+    # Normalise header names: strip leading/trailing whitespace so that column
+    # lookups are consistent with the stripped names returned by preview_csv().
+    # Without this, row.get("Date") fails when the raw header is " Date ".
+    reader.fieldnames = [f.strip() for f in reader.fieldnames]
+
     # --- column resolution ---------------------------------------------------
     if date_col and desc_col and amount_col:
-        # Validate provided column names exist in the file
-        header_set = {f.strip() for f in reader.fieldnames}
+        # Validate provided column names exist in the file (both already stripped)
+        header_set = set(reader.fieldnames)
         missing = [c for c in [date_col, desc_col, amount_col] if c not in header_set]
         if missing:
             raise HTTPException(status_code=400, detail=f"Column(s) not found in file: {missing}")
@@ -478,17 +483,21 @@ def parse_csv_content(
         resolved_amount = _resolve_column(reader.fieldnames, _AMT_ALIASES)
 
         if not all([resolved_date, resolved_desc, resolved_amount]):
-            detected = [f.strip() for f in reader.fieldnames]
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Could not identify required columns (date, description, amount). "
-                    f"Detected headers: {detected}. "
+                    f"Detected headers: {list(reader.fieldnames)}. "
                     f"Use the column mapper to assign them manually."
                 ),
             )
 
-    extra = [c for c in (extra_desc_cols or []) if c and c != resolved_desc]
+    # Strip extra col names too (defensive — frontend sends stripped names but
+    # guard against any future caller passing raw header strings)
+    extra = [
+        c.strip() for c in (extra_desc_cols or [])
+        if c and c.strip() and c.strip() != resolved_desc
+    ]
 
     rows = []
     for row in reader:
