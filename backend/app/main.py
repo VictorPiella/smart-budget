@@ -501,16 +501,20 @@ def parse_csv_content(
 
     rows = []
     for row in reader:
-        raw_date = row.get(resolved_date, "")
-        raw_desc = row.get(resolved_desc, "")
-        raw_amt  = row.get(resolved_amount, "")
+        # DictReader sets missing cells to None (when a row is shorter than the
+        # header), so we coerce with `or ""` rather than relying on the default
+        # argument of .get() — .get(key, "") only fires when the key is absent,
+        # not when it's present but None.
+        raw_date = (row.get(resolved_date) or "")
+        raw_desc = (row.get(resolved_desc) or "")
+        raw_amt  = (row.get(resolved_amount) or "")
 
         if not raw_date.strip() or not raw_amt.strip():
             continue
 
         # Merge extra description columns
         for col in extra:
-            extra_val = row.get(col, "").strip()
+            extra_val = (row.get(col) or "").strip()
             if extra_val and extra_val.lower() != raw_desc.strip().lower():
                 raw_desc = f"{raw_desc.strip()} | {extra_val}" if raw_desc.strip() else extra_val
 
