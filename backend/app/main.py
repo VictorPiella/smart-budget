@@ -9,14 +9,17 @@ import json
 from typing import Any, Dict, List, Optional
 
 from fastapi import (
-    BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Response, UploadFile, status
+    BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy import create_engine, extract, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
@@ -39,9 +42,16 @@ DATABASE_URL                = os.getenv("DATABASE_URL") or (
         db       = os.getenv("POSTGRES_DB",       "budget_db"),
     )
 )
-SECRET_KEY                  = os.getenv("SECRET_KEY",   "change-me-to-a-long-random-secret-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY", "")
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY environment variable is required. "
+        "Generate a strong value with: openssl rand -hex 32"
+    )
 ALGORITHM                   = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 h
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 8)))  # 8 h default
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB — enforced on all file uploads
 
 # ---------------------------------------------------------------------------
 # Database
@@ -148,12 +158,17 @@ def get_current_user(
 
 app = FastAPI(title="SmartBudget API", version="1.0.0")
 
+# Rate limiter — keyed by client IP
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost", "http://127.0.0.1"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
     expose_headers=["X-Total-Count", "X-Total-Pages", "X-Page", "X-Per-Page"],
 )
 
@@ -169,9 +184,23 @@ class UserCreate(BaseModel):
     email:    EmailStr
     password: str
 
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        return v
+
 class PasswordChange(BaseModel):
     current_password: str
     new_password:     str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("New password must be at least 8 characters.")
+        return v
 
 class UserOut(BaseModel):
     id:    uuid.UUID
@@ -503,7 +532,8 @@ def parse_csv_content(
     status_code=status.HTTP_201_CREATED,
     tags=["Auth"],
 )
-def register(payload: UserCreate, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, payload: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=409, detail="Email already registered.")
     user = User(email=payload.email, password_hash=_hash_password(payload.password))
@@ -514,7 +544,9 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/login", response_model=Token, tags=["Auth"])
+@limiter.limit("10/minute")
 def login(
+    request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     db:   Session = Depends(get_db),
 ):
@@ -1290,6 +1322,8 @@ async def preview_import(
 
     if file is not None:
         raw_bytes = await file.read()
+        if len(raw_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="File too large. Maximum is 20 MB.")
         content = raw_bytes.decode("utf-8-sig")
     elif raw_csv:
         content = raw_csv
@@ -1336,6 +1370,8 @@ async def import_transactions(
 
     if file is not None:
         raw_bytes = await file.read()
+        if len(raw_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="File too large. Maximum is 20 MB.")
         content = raw_bytes.decode("utf-8-sig")
     elif raw_csv:
         content = raw_csv
@@ -1640,6 +1676,8 @@ async def import_data(
     - Snapshot:    upserted (value updated if year+category already recorded).
     """
     raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum is 20 MB.")
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
