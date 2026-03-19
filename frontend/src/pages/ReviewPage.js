@@ -11,7 +11,7 @@ const THIS_YEAR  = new Date().getFullYear();
 const THIS_MONTH = new Date().getMonth() + 1;
 
 export default function ReviewPage() {
-  const { selectedAccount } = useAccounts();
+  const { selectedAccount, fetchUnmappedCount } = useAccounts();
 
   // ── Navigation state ────────────────────────────────────────────────────
   const [view,  setView]  = useState("yearly");
@@ -126,6 +126,13 @@ export default function ReviewPage() {
       setEditSaving(false);
     }
   }, [editForm, selectedAccount]);
+
+  const handleDeleteTxn = useCallback(async (txnId) => {
+    if (!window.confirm("Delete this transaction? This cannot be undone.")) return;
+    await api.delete(`/accounts/${selectedAccount.id}/transactions/${txnId}`);
+    setTransactions((prev) => prev.filter((t) => t.id !== txnId));
+    fetchUnmappedCount();
+  }, [selectedAccount, fetchUnmappedCount]);
 
   // ── Chart data (from summary) ────────────────────────────────────────────
   const monthlyChartData = summaryData
@@ -412,9 +419,16 @@ export default function ReviewPage() {
                                 </button>
                                 <button
                                   onClick={() => setEditingId(null)}
-                                  className="text-gray-500 hover:text-gray-300 text-xs"
+                                  className="text-gray-500 hover:text-gray-300 text-xs mr-2"
                                 >
                                   Cancel
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTxn(t.id)}
+                                  className="text-red-600 hover:text-red-400 text-xs"
+                                  title="Delete transaction"
+                                >
+                                  Delete
                                 </button>
                               </td>
                             </>

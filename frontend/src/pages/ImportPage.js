@@ -68,7 +68,7 @@ function ImportResult({ result, onReset, resetLabel = "Import another file" }) {
 const todayIso = () => new Date().toISOString().split("T")[0];
 
 export default function ImportPage() {
-  const { accounts, selectedAccount, setSelectedAccount, fetchAccounts } = useAccounts();
+  const { accounts, selectedAccount, setSelectedAccount, fetchAccounts, fetchUnmappedCount } = useAccounts();
   const [mode, setMode] = useState("file");
 
   // ── CSV flow state ────────────────────────────────────────────────────────
@@ -77,10 +77,11 @@ export default function ImportPage() {
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [mapping, setMapping] = useState({ date: "", desc: "", amount: "", extra: [] });
-  const [result, setResult]   = useState(null);
-  const [error, setError]     = useState("");
+  const [result, setResult]         = useState(null);
+  const [error, setError]           = useState("");
   const [importing, setImporting]   = useState(false);
   const [remapping, setRemapping]   = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // ── Manual entry state ────────────────────────────────────────────────────
   const emptyManual = () => ({ date: todayIso(), description: "", amount: "" });
@@ -132,6 +133,7 @@ export default function ImportPage() {
 
   const handleImport = async () => {
     if (!selectedAccount || !preview) return;
+    setShowConfirm(false);
     setError(""); setImporting(true);
     try {
       const form = buildForm();
@@ -143,6 +145,7 @@ export default function ImportPage() {
       setResult(data);
       setPreview(null);
       fetchAccounts();
+      fetchUnmappedCount();
     } catch (err) {
       setError(err.response?.data?.detail || "Import failed.");
     } finally {
@@ -474,7 +477,7 @@ export default function ImportPage() {
 
           <div className="flex gap-2">
             <button
-              onClick={handleImport}
+              onClick={() => setShowConfirm(true)}
               disabled={!canImport || importing}
               className="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
             >
@@ -494,6 +497,38 @@ export default function ImportPage() {
             >
               {remapping ? "Remapping..." : "Re-run Rules"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Import confirmation modal ─────────────────────────────────────── */}
+      {showConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-lg font-semibold">Confirm Import</h2>
+            <p className="text-sm text-gray-300">
+              Import transactions into{" "}
+              <span className="text-indigo-300 font-semibold">{selectedAccount?.name}</span>?
+            </p>
+            <p className="text-xs text-gray-500">
+              All rows will be parsed and imported. Duplicates are automatically skipped.
+              Mapping rules will fire on every new transaction.
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleImport}
+                disabled={importing}
+                className="flex-1 bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-sm py-2 rounded transition-colors"
+              >
+                {importing ? "Importing…" : "Yes, Import"}
+              </button>
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 rounded transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

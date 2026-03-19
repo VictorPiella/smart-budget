@@ -536,6 +536,17 @@ def parse_csv_content(
     return rows
 
 # ---------------------------------------------------------------------------
+# Public Stats
+# ---------------------------------------------------------------------------
+
+@app.get("/stats", tags=["Stats"])
+def get_stats(db: Session = Depends(get_db)):
+    """Public endpoint — returns aggregate platform statistics."""
+    user_count = db.query(func.count(User.id)).scalar() or 0
+    return {"user_count": user_count}
+
+
+# ---------------------------------------------------------------------------
 # Auth Routes
 # ---------------------------------------------------------------------------
 
@@ -1205,6 +1216,34 @@ def update_transaction(
     db.commit()
     db.refresh(txn)
     return txn
+
+
+@app.delete(
+    "/accounts/{account_id}/transactions/{transaction_id}",
+    status_code=204,
+    tags=["Transactions"],
+)
+def delete_transaction(
+    account_id:     uuid.UUID,
+    transaction_id: uuid.UUID,
+    db:             Session = Depends(get_db),
+    current_user:   User    = Depends(get_current_user),
+):
+    account = db.query(Account).filter(
+        Account.id      == account_id,
+        Account.user_id == current_user.id,
+    ).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    txn = db.query(Transaction).filter(
+        Transaction.id         == transaction_id,
+        Transaction.account_id == account_id,
+    ).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+    db.delete(txn)
+    db.commit()
+
 
 
 # ---------------------------------------------------------------------------

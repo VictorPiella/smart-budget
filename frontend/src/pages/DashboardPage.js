@@ -4,7 +4,7 @@ import { useAccounts } from "../context/AccountContext";
 import { useNavigate } from "react-router-dom";
 
 export default function DashboardPage() {
-  const { accounts, selectedAccount, fetchAccounts, setSelectedAccount } =
+  const { accounts, selectedAccount, fetchAccounts, setSelectedAccount, fetchUnmappedCount } =
     useAccounts();
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -121,6 +121,14 @@ export default function DashboardPage() {
     } finally {
       setEditSaving(false);
     }
+  };
+
+  const handleDeleteTxn = async (txnId) => {
+    if (!window.confirm("Delete this transaction? This cannot be undone.")) return;
+    await api.delete(`/accounts/${selectedAccount.id}/transactions/${txnId}`);
+    setTransactions((prev) => prev.filter((t) => t.id !== txnId));
+    fetchAccounts();        // refresh balance
+    fetchUnmappedCount();
   };
 
   const catMap = Object.fromEntries(categories.map((c) => [c.id, c]));
@@ -399,9 +407,16 @@ export default function DashboardPage() {
                               </button>
                               <button
                                 onClick={() => setEditingId(null)}
-                                className="text-gray-500 hover:text-gray-300 text-xs"
+                                className="text-gray-500 hover:text-gray-300 text-xs mr-2"
                               >
                                 Cancel
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTxn(t.id)}
+                                className="text-red-600 hover:text-red-400 text-xs"
+                                title="Delete transaction"
+                              >
+                                Delete
                               </button>
                             </td>
                           </>

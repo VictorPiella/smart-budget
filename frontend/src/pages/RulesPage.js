@@ -3,7 +3,7 @@ import api from "../api";
 import { useAccounts } from "../context/AccountContext";
 
 export default function RulesPage() {
-  const { selectedAccount, fetchAccounts } = useAccounts();
+  const { selectedAccount, fetchAccounts, fetchUnmappedCount } = useAccounts();
   const [categories, setCategories] = useState([]);
   const [rules, setRules] = useState([]);
   const [newCatName, setNewCatName] = useState("");
@@ -78,6 +78,7 @@ export default function RulesPage() {
       await api.post(`/accounts/${selectedAccount.id}/remap`);
       setRuleForm((f) => ({ ...f, pattern: "", priority: 0 }));
       fetchAll();
+      fetchUnmappedCount();
     } catch (err) {
       setRuleError(err.response?.data?.detail || "Failed to create rule.");
     }
@@ -87,6 +88,7 @@ export default function RulesPage() {
     await api.delete(`/accounts/${selectedAccount.id}/rules/${id}`);
     await api.post(`/accounts/${selectedAccount.id}/remap`);
     fetchAll();
+    fetchUnmappedCount();
   };
 
   const [editingRuleId, setEditingRuleId] = useState(null);
@@ -113,6 +115,7 @@ export default function RulesPage() {
       await api.post(`/accounts/${selectedAccount.id}/remap`);
       setEditingRuleId(null);
       fetchAll();
+      fetchUnmappedCount();
     } catch (err) {
       setEditRuleError(err.response?.data?.detail || "Failed to update rule.");
     } finally {
@@ -337,20 +340,26 @@ export default function RulesPage() {
 
                 {/* Rules table for this category */}
                 <div className="rounded border border-gray-800 overflow-hidden">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm table-fixed">
+                    <colgroup>
+                      <col className="w-28" />
+                      <col />
+                      <col className="w-16" />
+                      <col className="w-20" />
+                    </colgroup>
                     <thead>
                       <tr className="bg-gray-800/60 text-gray-500 text-xs uppercase">
-                        <th className="text-left px-3 py-1.5 pr-4">Match Type</th>
-                        <th className="text-left px-3 py-1.5 pr-4">Pattern</th>
-                        <th className="text-right px-3 py-1.5 pr-4">Priority</th>
-                        <th className="px-3 py-1.5 w-16"></th>
+                        <th className="text-left px-3 py-1.5">Match Type</th>
+                        <th className="text-left px-3 py-1.5">Pattern</th>
+                        <th className="text-right px-3 py-1.5">Priority</th>
+                        <th className="px-3 py-1.5"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {catRules.map((r) => (
                         editingRuleId === r.id ? (
                           <tr key={r.id} className="border-t border-gray-800 bg-gray-800/40">
-                            <td className="px-3 py-2 pr-4">
+                            <td className="px-3 py-2">
                               <select
                                 value={editRuleForm.match_type}
                                 onChange={(e) => setEditRuleForm((f) => ({ ...f, match_type: e.target.value }))}
@@ -361,14 +370,14 @@ export default function RulesPage() {
                                 <option value="contains">Contains</option>
                               </select>
                             </td>
-                            <td className="px-3 py-2 pr-4">
+                            <td className="px-3 py-2">
                               <input
                                 value={editRuleForm.pattern}
                                 onChange={(e) => setEditRuleForm((f) => ({ ...f, pattern: e.target.value }))}
                                 className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs font-mono w-full focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               />
                             </td>
-                            <td className="px-3 py-2 pr-4 text-right">
+                            <td className="px-3 py-2 text-right">
                               <input
                                 type="number"
                                 value={editRuleForm.priority}
@@ -397,9 +406,9 @@ export default function RulesPage() {
                           </tr>
                         ) : (
                           <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-800/30">
-                            <td className="px-3 py-2 pr-4 text-gray-400 capitalize text-xs">{r.match_type.replace("_", " ")}</td>
-                            <td className="px-3 py-2 pr-4 font-mono text-yellow-300 text-xs">{r.pattern}</td>
-                            <td className="px-3 py-2 pr-4 text-right text-gray-500 text-xs">{r.priority}</td>
+                            <td className="px-3 py-2 text-gray-400 capitalize text-xs">{r.match_type.replace("_", " ")}</td>
+                            <td className="px-3 py-2 font-mono text-yellow-300 text-xs truncate">{r.pattern}</td>
+                            <td className="px-3 py-2 text-right text-gray-500 text-xs">{r.priority}</td>
                             <td className="px-3 py-2 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button

@@ -3,7 +3,7 @@ import api from "../api";
 import { useAccounts } from "../context/AccountContext";
 
 export default function InboxPage() {
-  const { accounts, selectedAccount } = useAccounts();
+  const { accounts, selectedAccount, fetchUnmappedCount } = useAccounts();
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -11,6 +11,10 @@ export default function InboxPage() {
   const [ruleForm, setRuleForm] = useState({ category_id: "", pattern: "", match_type: "contains", priority: 0 });
   const [ruleError, setRuleError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // ── Checkbox / bulk-delete state ─────────────────────────────────────────
+  const [selected, setSelected] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const fetchData = async () => {
     if (!selectedAccount) return;
@@ -22,6 +26,7 @@ export default function InboxPage() {
       ]);
       setTransactions(txnRes.data);
       setCategories(catRes.data);
+      setSelected(new Set());
       if (catRes.data.length > 0) {
         setRuleForm((f) => ({ ...f, category_id: f.category_id || catRes.data[0].id }));
       }
@@ -56,7 +61,8 @@ export default function InboxPage() {
       });
       await api.post(`/accounts/${selectedAccount.id}/remap`);
       setRuleModal(null);
-      fetchData();
+      await fetchData();
+      fetchUnmappedCount();
     } catch (err) {
       setRuleError(err.response?.data?.detail || "Failed to create rule.");
     } finally {
@@ -72,8 +78,48 @@ export default function InboxPage() {
     try {
       await api.patch(`/accounts/${selectedAccount.id}/transactions/${txnId}`, { category_id: categoryId });
       setTransactions((prev) => prev.filter((t) => t.id !== txnId));
+      setSelected((prev) => { const s = new Set(prev); s.delete(txnId); return s; });
+      fetchUnmappedCount();
     } finally {
       setAssigning((a) => ({ ...a, [txnId]: false }));
+    }
+  };
+
+  // ── Checkbox helpers ──────────────────────────────────────────────────────
+  const allIds = transactions.map((t) => t.id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(allIds));
+    }
+  };
+
+  const toggleOne = (id) => {
+    setSelected((prev) => {
+      const s = new Set(prev);
+      s.has(id) ? s.delete(id) : s.add(id);
+      return s;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!window.confirm(`Delete ${selected.size} transaction${selected.size > 1 ? "s" : ""}? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(
+        [...selected].map((id) =>
+          api.delete(`/accounts/${selectedAccount.id}/transactions/${id}`)
+        )
+      );
+      setTransactions((prev) => prev.filter((t) => !selected.has(t.id)));
+      setSelected(new Set());
+      fetchUnmappedCount();
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -92,9 +138,20 @@ export default function InboxPage() {
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Unmapped Inbox</h1>
-        <span className="bg-yellow-700 text-yellow-100 text-sm font-semibold px-3 py-1 rounded-full">
-          {transactions.length} unmapped
-        </span>
+        <div className="flex items-center gap-3">
+          {selected.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded transition-colors"
+            >
+              {bulkDeleting ? "Deleting…" : `Delete ${selected.size} selected`}
+            </button>
+          )}
+          <span className="bg-yellow-700 text-yellow-100 text-sm font-semibold px-3 py-1 rounded-full">
+            {transactions.length} unmapped
+          </span>
+        </div>
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -114,6 +171,15 @@ export default function InboxPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-400 text-xs uppercase border-b border-gray-800">
+                    <th className="py-2 pr-3 w-8">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        className="accent-indigo-500 cursor-pointer"
+                        title={allSelected ? "Deselect all" : "Select all"}
+                      />
+                    </th>
                     <th className="text-left py-2 pr-4">Date</th>
                     <th className="text-left py-2 pr-4">Description</th>
                     <th className="text-right py-2 pr-4">Amount</th>
@@ -123,7 +189,18 @@ export default function InboxPage() {
                 </thead>
                 <tbody>
                   {transactions.map((t) => (
-                    <tr key={t.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                    <tr
+                      key={t.id}
+                      className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${selected.has(t.id) ? "bg-gray-800/20" : ""}`}
+                    >
+                      <td className="py-2 pr-3">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(t.id)}
+                          onChange={() => toggleOne(t.id)}
+                          className="accent-indigo-500 cursor-pointer"
+                        />
+                      </td>
                       <td className="py-2 pr-4 text-gray-400 whitespace-nowrap">{t.date}</td>
                       <td className="py-2 pr-4 max-w-sm">
                         <span className="font-mono text-xs bg-gray-800 px-2 py-0.5 rounded text-gray-200">

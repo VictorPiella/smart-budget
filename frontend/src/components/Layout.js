@@ -6,22 +6,19 @@ import api from "../api";
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
-  const { accounts, selectedAccount, setSelectedAccount } = useAccounts();
+  const { accounts, selectedAccount, setSelectedAccount, unmappedCount } = useAccounts();
   const navigate = useNavigate();
-  const [unmappedCount, setUnmappedCount] = useState(0);
   const [showPwModal, setShowPwModal] = useState(false);
   const [pwForm, setPwForm] = useState({ current_password: "", new_password: "", confirm: "" });
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
+  const [userCount, setUserCount] = useState(null);
 
+  // Fetch public platform stats once on mount
   useEffect(() => {
-    if (!selectedAccount) { setUnmappedCount(0); return; }
-    api
-      .get(`/accounts/${selectedAccount.id}/transactions?unmapped_only=true`)
-      .then(({ data }) => setUnmappedCount(data.length))
-      .catch(() => setUnmappedCount(0));
-  }, [selectedAccount]);
+    api.get("/stats").then(({ data }) => setUserCount(data.user_count)).catch(() => {});
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -123,6 +120,16 @@ export default function Layout({ children }) {
       </header>
 
       <main className="flex-1 p-6">{children}</main>
+
+      {/* Footer */}
+      <footer className="border-t border-gray-800/60 px-6 py-2 flex items-center">
+        {userCount !== null && (
+          <span className="text-xs text-gray-600">
+            🌍 <span className="font-medium text-gray-500">{userCount}</span>{" "}
+            {userCount === 1 ? "person is" : "people are"} using SmartBudget
+          </span>
+        )}
+      </footer>
 
       {showPwModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
