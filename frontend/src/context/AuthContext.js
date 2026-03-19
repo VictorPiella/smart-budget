@@ -31,6 +31,19 @@ export function AuthProvider({ children }) {
     await login(email, password);
   };
 
+  const loginWithToken = (token) => {
+    // Used by MagicLinkPage after receiving a JWT from the backend.
+    // We don't know the email at this point — it will be loaded on next page visit.
+    localStorage.setItem("token", token);
+    // Decode the email from the JWT payload if available, otherwise use a placeholder
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      if (payload.email) localStorage.setItem("email", payload.email);
+    } catch (_) { /* ignore decode errors */ }
+    // Trigger a reload so AccountContext and Layout re-initialise with the new token
+    setUser({ email: localStorage.getItem("email") || "" });
+  };
+
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("email");
@@ -38,7 +51,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, register, loginWithToken, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

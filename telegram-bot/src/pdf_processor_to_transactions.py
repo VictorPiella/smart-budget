@@ -41,6 +41,11 @@ def extract_transactions_from_markdown(markdown_content: str) -> list:
         entrada_str = m.group(4).strip()
         salida_str  = m.group(5).strip()
 
+        # Docling sometimes appends a stray "null" (or "None") at the end of
+        # a description cell when an adjacent empty PDF cell (e.g. BENEFICIARIO/
+        # ORDENANTE) bleeds into it during OCR conversion. Strip it.
+        descripcion = re.sub(r'\s*null\s*$', '', descripcion, flags=re.IGNORECASE).strip()
+
         if not fecha_str or not descripcion:
             continue
 

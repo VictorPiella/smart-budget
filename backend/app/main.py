@@ -2,9 +2,12 @@ import csv
 import io
 import math
 import os
+import secrets
+import smtplib
 import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from email.message import EmailMessage
 import json
 from typing import Any, Dict, List, Optional
 
@@ -54,6 +57,16 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(6
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB — enforced on all file uploads
 
 # ---------------------------------------------------------------------------
+# Email / Magic-link config
+# ---------------------------------------------------------------------------
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
+APP_URL   = os.getenv("APP_URL", "http://localhost:3000")
+
+# ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
 
@@ -97,6 +110,9 @@ with engine.connect() as _conn:
     # ── Investment tracker columns ────────────────────────────────────────────
     _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value NUMERIC(14,2) DEFAULT NULL"))
     _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value_updated_at TIMESTAMP DEFAULT NULL"))
+    # ── Magic-link / password-reset columns ──────────────────────────────────
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token     VARCHAR(255) NULL"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_exp TIMESTAMP   NULL"))
     _conn.commit()
 
 def get_db():
@@ -128,6 +144,42 @@ def _create_access_token(user_id: str) -> str:
         "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _send_magic_link_email(to_email: str, token: str) -> None:
+    """Send a one-time login link to the user.
+    If SMTP_HOST is not configured, prints the link to stdout (dev mode)."""
+    link = f"{APP_URL}/magic-link?token={token}"
+    if not SMTP_HOST:
+        print(f"[DEV] Magic link for {to_email}: {link}", flush=True)
+        return
+    msg = EmailMessage()
+    msg["Subject"] = "Your SmartBudget login link"
+    msg["From"]    = SMTP_FROM or SMTP_USER
+    msg["To"]      = to_email
+    msg.set_content(
+        f"Click the link below to log in to SmartBudget.\n"
+        f"This link expires in 1 hour and can only be used once.\n\n"
+        f"{link}\n\n"
+        f"If you didn't request this, you can safely ignore this email."
+    )
+    msg.add_alternative(f"""<!DOCTYPE html><html><body style="font-family:sans-serif;background:#0f172a;color:#e2e8f0;padding:32px">
+<div style="max-width:480px;margin:0 auto;background:#1e293b;border-radius:12px;padding:32px">
+  <h2 style="color:#818cf8;margin-top:0">SmartBudget</h2>
+  <p>Click the button below to log in. This link expires in <strong>1 hour</strong> and can only be used once.</p>
+  <a href="{link}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;margin:16px 0">
+    Log in to SmartBudget
+  </a>
+  <p style="color:#64748b;font-size:12px;margin-top:24px">
+    Or copy this URL:<br><span style="color:#94a3b8">{link}</span>
+  </p>
+  <p style="color:#64748b;font-size:12px">If you didn't request this, you can safely ignore this email.</p>
+</div></body></html>""", subtype="html")
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
+        s.ehlo()
+        s.starttls()
+        s.login(SMTP_USER, SMTP_PASS)
+        s.send_message(msg)
 
 
 def get_current_user(
@@ -211,6 +263,12 @@ class UserOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type:   str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class MagicLinkVerify(BaseModel):
+    token: str
 
 class AccountCreate(BaseModel):
     name:     str
@@ -593,6 +651,48 @@ def change_password(
         raise HTTPException(status_code=400, detail="Current password is incorrect.")
     current_user.password_hash = _hash_password(payload.new_password)
     db.commit()
+
+
+@app.post("/auth/forgot-password", status_code=200, tags=["Auth"])
+@limiter.limit("5/minute")
+def forgot_password(
+    request: Request,
+    payload: ForgotPasswordRequest,
+    db:      Session = Depends(get_db),
+):
+    """Send a magic login link to the given email address.
+    Always returns 200 regardless of whether the email is registered (prevents enumeration)."""
+    user = db.query(User).filter(User.email == payload.email).first()
+    if user:
+        token = secrets.token_urlsafe(32)
+        user.reset_token     = token
+        user.reset_token_exp = datetime.utcnow() + timedelta(hours=1)
+        db.commit()
+        try:
+            _send_magic_link_email(user.email, token)
+        except Exception as exc:
+            # Don't expose SMTP errors to the client — just log them
+            print(f"[WARN] Failed to send magic link to {user.email}: {exc}", flush=True)
+    return {"detail": "If that email is registered, a login link has been sent."}
+
+
+@app.post("/auth/verify-magic-link", response_model=Token, tags=["Auth"])
+def verify_magic_link(
+    payload: MagicLinkVerify,
+    db:      Session = Depends(get_db),
+):
+    """Validate a one-time magic link token and return a JWT (auto-login)."""
+    user = db.query(User).filter(User.reset_token == payload.token).first()
+    if not user or user.reset_token_exp is None or user.reset_token_exp < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired.")
+    # Consume the token — single use only
+    user.reset_token     = None
+    user.reset_token_exp = None
+    db.commit()
+    return {
+        "access_token": _create_access_token(str(user.id)),
+        "token_type":   "bearer",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1534,16 +1634,25 @@ def auto_import(
 
     new_transactions: List[Transaction] = []
     skipped = 0
+    seen_checksums: set = set()  # dedup within this batch before hitting the DB
 
     for row in payload.transactions:
         checksum = compute_checksum(str(row.date), str(row.amount), row.description)
 
+        # Skip if already seen in this batch (same date+amount+desc sent twice)
+        if checksum in seen_checksums:
+            skipped += 1
+            continue
+
+        # Skip if already persisted in the DB
         if db.query(Transaction).filter(
             Transaction.account_id == account_id,
             Transaction.checksum   == checksum,
         ).first():
             skipped += 1
             continue
+
+        seen_checksums.add(checksum)
 
         category_id = apply_mapping_rules(row.description, rules)
 
