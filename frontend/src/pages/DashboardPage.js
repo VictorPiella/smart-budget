@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import api from "../api";
+import api, { apiError } from "../api";
 import { useAccounts } from "../context/AccountContext";
 import { useNavigate } from "react-router-dom";
 
@@ -46,7 +46,7 @@ export default function DashboardPage() {
       setNewAccName("");
       await fetchAccounts();
     } catch (err) {
-      setAccError(err.response?.data?.detail || "Failed to create account.");
+      setAccError(apiError(err, "Failed to create account."));
     } finally {
       setCreating(false);
     }

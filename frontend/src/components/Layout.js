@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useAccounts } from "../context/AccountContext";
-import api from "../api";
+import api, { apiError } from "../api";
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
@@ -42,7 +42,7 @@ export default function Layout({ children }) {
       setPwForm({ current_password: "", new_password: "", confirm: "" });
       setTimeout(() => { setShowPwModal(false); setPwSuccess(false); }, 1500);
     } catch (err) {
-      setPwError(err.response?.data?.detail || "Failed to change password.");
+      setPwError(apiError(err, "Failed to change password."));
     } finally {
       setPwSaving(false);
     }

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import api from "../api";
+import api, { apiError } from "../api";
 import { useAccounts } from "../context/AccountContext";
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -168,7 +168,7 @@ export default function InvestmentPage() {
     } catch (err) {
       setSaveError((prev) => ({
         ...prev,
-        [catId]: err.response?.data?.detail || "Could not save — check connection.",
+        [catId]: apiError(err, "Could not save — check connection."),
       }));
       // Keep dirty value so the user can retry without retyping
     } finally {

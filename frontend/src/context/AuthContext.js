@@ -27,8 +27,13 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (email, password) => {
-    await api.post("/auth/register", { email, password });
-    await login(email, password);
+    const { data } = await api.post("/auth/register", { email, password });
+    // If the backend auto-verified (no SMTP configured), log the user in immediately.
+    // Otherwise return the response so the caller can show "check your email".
+    if (data.email_verified) {
+      await login(email, password);
+    }
+    return data;
   };
 
   const loginWithToken = (token) => {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import api from "../api";
+import api, { apiError } from "../api";
 import { useAccounts } from "../context/AccountContext";
 
 // Shared result card used by CSV import and Manual Entry
@@ -125,7 +125,7 @@ export default function ImportPage() {
         extra:  [],
       });
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not parse file.");
+      setError(apiError(err, "Could not parse file."));
     } finally {
       setPreviewing(false);
     }
@@ -147,7 +147,7 @@ export default function ImportPage() {
       fetchAccounts();
       fetchUnmappedCount();
     } catch (err) {
-      setError(err.response?.data?.detail || "Import failed.");
+      setError(apiError(err, "Import failed."));
     } finally {
       setImporting(false);
     }
@@ -194,7 +194,7 @@ export default function ImportPage() {
       setManualResult(data);
       fetchAccounts();
     } catch (err) {
-      setManualError(err.response?.data?.detail || "Failed to add transaction.");
+      setManualError(apiError(err, "Failed to add transaction."));
     } finally {
       setManualSubmitting(false);
     }

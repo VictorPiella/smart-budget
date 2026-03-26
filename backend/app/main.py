@@ -2,6 +2,7 @@ import csv
 import io
 import math
 import os
+import re
 import secrets
 import smtplib
 import uuid
@@ -22,7 +23,7 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+from slowapi.util import get_remote_address  # noqa: F401 (kept for reference)
 from sqlalchemy import create_engine, extract, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
@@ -113,6 +114,11 @@ with engine.connect() as _conn:
     # ── Magic-link / password-reset columns ──────────────────────────────────
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token     VARCHAR(255) NULL"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_exp TIMESTAMP   NULL"))
+    # ── Email verification columns ────────────────────────────────────────────
+    # Default TRUE so all existing users are automatically considered verified.
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified   BOOLEAN     NOT NULL DEFAULT TRUE"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_token     VARCHAR(255) NULL"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_token_exp TIMESTAMP   NULL"))
     _conn.commit()
 
 def get_db():
@@ -175,11 +181,53 @@ def _send_magic_link_email(to_email: str, token: str) -> None:
   </p>
   <p style="color:#64748b;font-size:12px">If you didn't request this, you can safely ignore this email.</p>
 </div></body></html>""", subtype="html")
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as s:
         s.ehlo()
         s.starttls()
         s.login(SMTP_USER, SMTP_PASS)
         s.send_message(msg)
+
+
+def _send_email(to_email: str, subject: str, text_body: str, html_body: str) -> None:
+    """Low-level helper — send an email via SMTP. Raises on failure."""
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"]    = SMTP_FROM or SMTP_USER
+    msg["To"]      = to_email
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as s:
+        s.ehlo()
+        s.starttls()
+        s.login(SMTP_USER, SMTP_PASS)
+        s.send_message(msg)
+
+
+def _send_verify_email(to_email: str, token: str) -> None:
+    link = f"{APP_URL}/verify-email?token={token}"
+    if not SMTP_HOST:
+        print(f"[DEV] Verify email for {to_email}: {link}", flush=True)
+        return
+    _send_email(
+        to_email,
+        subject="Verify your SmartBudget email",
+        text_body=(
+            f"Welcome to SmartBudget! Please verify your email address:\n\n{link}\n\n"
+            "This link expires in 24 hours.\n"
+            "If you didn't create an account, you can safely ignore this email."
+        ),
+        html_body=f"""<!DOCTYPE html><html><body style="font-family:sans-serif;background:#0f172a;color:#e2e8f0;padding:32px">
+<div style="max-width:480px;margin:0 auto;background:#1e293b;border-radius:12px;padding:32px">
+  <h2 style="color:#818cf8;margin-top:0">Welcome to SmartBudget</h2>
+  <p>Please verify your email address to activate your account.</p>
+  <a href="{link}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;margin:16px 0">
+    Verify my email
+  </a>
+  <p style="color:#64748b;font-size:12px;margin-top:24px">Link expires in 24 hours.<br>
+  Or copy: <span style="color:#94a3b8">{link}</span></p>
+  <p style="color:#64748b;font-size:12px">If you didn't create an account, ignore this email.</p>
+</div></body></html>""",
+    )
 
 
 def get_current_user(
@@ -210,8 +258,18 @@ def get_current_user(
 
 app = FastAPI(title="SmartBudget API", version="1.0.0")
 
-# Rate limiter — keyed by client IP
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiter — keyed by real client IP.
+# nginx (same container) forwards the real client IP in X-Forwarded-For.
+# We use the *rightmost* IP in that header, which is the one added by our nginx
+# and cannot be spoofed by the client (the client-supplied leftmost entries are
+# untrusted). This prevents rate-limit bypass via a forged X-Forwarded-For value.
+def _real_client_ip(request: Request) -> str:
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[-1].strip()
+    return request.client.host  # fallback: direct connection (dev)
+
+limiter = Limiter(key_func=_real_client_ip, default_limits=["200/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -241,6 +299,10 @@ class UserCreate(BaseModel):
     def password_min_length(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters.")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain at least one uppercase letter.")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("Password must contain at least one digit.")
         return v
 
 class PasswordChange(BaseModel):
@@ -252,11 +314,16 @@ class PasswordChange(BaseModel):
     def new_password_min_length(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError("New password must be at least 8 characters.")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("New password must contain at least one uppercase letter.")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("New password must contain at least one digit.")
         return v
 
 class UserOut(BaseModel):
-    id:    uuid.UUID
-    email: str
+    id:             uuid.UUID
+    email:          str
+    email_verified: bool = True
     class Config:
         from_attributes = True
 
@@ -268,6 +335,9 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 class MagicLinkVerify(BaseModel):
+    token: str
+
+class VerifyEmailRequest(BaseModel):
     token: str
 
 class AccountCreate(BaseModel):
@@ -616,12 +686,40 @@ def get_stats(db: Session = Depends(get_db)):
 )
 @limiter.limit("5/minute")
 def register(request: Request, payload: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == payload.email).first():
-        raise HTTPException(status_code=409, detail="Email already registered.")
-    user = User(email=payload.email, password_hash=_hash_password(payload.password))
+    existing = db.query(User).filter(User.email == payload.email).first()
+    if existing:
+        # Return the same shape as a real registration but reveal nothing about
+        # whether the email is already taken (prevents email enumeration).
+        if SMTP_HOST:
+            # Optionally: send a "someone tried to register" notice to the existing address.
+            pass
+        return existing
+
+    # If SMTP is configured require email verification; otherwise auto-verify (dev/self-hosted).
+    needs_verification = bool(SMTP_HOST)
+    verify_token = None
+    verify_exp   = None
+    if needs_verification:
+        verify_token = secrets.token_urlsafe(32)
+        verify_exp   = datetime.utcnow() + timedelta(hours=24)
+
+    user = User(
+        email            = payload.email,
+        password_hash    = _hash_password(payload.password),
+        email_verified   = not needs_verification,
+        verify_token     = verify_token,
+        verify_token_exp = verify_exp,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    if needs_verification:
+        try:
+            _send_verify_email(user.email, verify_token)
+        except Exception as exc:
+            print(f"[WARN] Failed to send verification email to {user.email}: {exc}", flush=True)
+
     return user
 
 
@@ -635,6 +733,11 @@ def login(
     user = db.query(User).filter(User.email == form.username).first()
     if not user or not _verify_password(form.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Please verify your email before signing in. Check your inbox for a verification link.",
+        )
     return {
         "access_token": _create_access_token(str(user.id)),
         "token_type":   "bearer",
@@ -677,7 +780,9 @@ def forgot_password(
 
 
 @app.post("/auth/verify-magic-link", response_model=Token, tags=["Auth"])
+@limiter.limit("5/minute")
 def verify_magic_link(
+    request: Request,
     payload: MagicLinkVerify,
     db:      Session = Depends(get_db),
 ):
@@ -693,6 +798,37 @@ def verify_magic_link(
         "access_token": _create_access_token(str(user.id)),
         "token_type":   "bearer",
     }
+
+
+@app.post("/auth/verify-email", response_model=Token, tags=["Auth"])
+@limiter.limit("5/minute")
+def verify_email(
+    request: Request,
+    payload: VerifyEmailRequest,
+    db:      Session = Depends(get_db),
+):
+    """Consume an email verification token, mark the account as verified, and return a JWT."""
+    user = db.query(User).filter(User.verify_token == payload.token).first()
+    if not user or user.verify_token_exp is None or user.verify_token_exp < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="This verification link is invalid or has expired.")
+    user.email_verified   = True
+    user.verify_token     = None
+    user.verify_token_exp = None
+    db.commit()
+    return {
+        "access_token": _create_access_token(str(user.id)),
+        "token_type":   "bearer",
+    }
+
+
+@app.delete("/auth/me", status_code=204, tags=["Auth"])
+def delete_account(
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """Permanently delete the authenticated user and all their data (GDPR right to erasure)."""
+    db.delete(current_user)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -1541,6 +1677,8 @@ async def import_transactions(
         amount_col      = col_amount or None,
         extra_desc_cols = extra_cols,
     )
+    if len(rows) > 50_000:
+        raise HTTPException(status_code=413, detail="Too many transactions. Maximum is 50,000 rows per import.")
 
     rules: List[MappingRule] = (
         db.query(MappingRule)
@@ -1846,6 +1984,10 @@ async def import_data(
 
     if data.get("version") != 1:
         raise HTTPException(status_code=422, detail="Unsupported backup version.")
+
+    total_txns = sum(len(acct.get("transactions", [])) for acct in data.get("accounts", []))
+    if total_txns > 50_000:
+        raise HTTPException(status_code=413, detail="Too many transactions. Maximum is 50,000 rows per import.")
 
     stats = {
         "accounts_created":     0,

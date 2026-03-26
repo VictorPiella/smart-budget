@@ -1,9 +1,28 @@
 import React, { useRef, useState } from "react";
-import api from "../api";
+import api, { apiError } from "../api";
 import { useAccounts } from "../context/AccountContext";
+import { useAuth } from "../context/AuthContext";
 
 export default function SettingsPage() {
   const { fetchAccounts } = useAccounts();
+  const { logout } = useAuth();
+
+  // ── Delete account ────────────────────────────────────────────────────────
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleting, setDeleting]           = useState(false);
+  const [deleteError, setDeleteError]     = useState("");
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await api.delete("/auth/me");
+      logout();
+    } catch {
+      setDeleteError("Failed to delete account. Please try again.");
+      setDeleting(false);
+    }
+  };
 
   // ── Export ────────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
@@ -51,7 +70,7 @@ export default function SettingsPage() {
       if (fileRef.current) fileRef.current.value = "";
       fetchAccounts();
     } catch (err) {
-      setImportError(err.response?.data?.detail || "Import failed — check the file and try again.");
+      setImportError(apiError(err, "Import failed — check the file and try again."));
     } finally {
       setImporting(false);
     }
@@ -157,6 +176,43 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+      </section>
+
+      {/* ── Danger Zone ────────────────────────────────────────────────────── */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-red-400 border-b border-red-900/40 pb-2">
+          Danger Zone
+        </h2>
+        <div className="bg-gray-900 border border-red-900/50 rounded-xl p-5 space-y-4">
+          <div>
+            <h3 className="font-medium text-gray-100">Delete my account</h3>
+            <p className="text-sm text-gray-400 mt-1">
+              Permanently deletes your account and <strong className="text-white">all data</strong> —
+              accounts, transactions, categories, rules, and investment snapshots.
+              This cannot be undone.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs text-gray-400 uppercase tracking-wide block">
+              Type <span className="text-red-400 font-mono">DELETE</span> to confirm
+            </label>
+            <input
+              type="text"
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              placeholder="DELETE"
+              className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm w-full focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+          </div>
+          {deleteError && <p className="text-red-400 text-sm">{deleteError}</p>}
+          <button
+            onClick={handleDeleteAccount}
+            disabled={deleteConfirm !== "DELETE" || deleting}
+            className="bg-red-700 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded transition-colors"
+          >
+            {deleting ? "Deleting…" : "Permanently delete my account"}
+          </button>
         </div>
       </section>
     </div>

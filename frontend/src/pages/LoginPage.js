@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { apiError } from "../api";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -18,7 +19,7 @@ export default function LoginPage() {
       await login(email, password);
       navigate("/");
     } catch (err) {
-      setError(err.response?.data?.detail || "Login failed.");
+      setError(apiError(err, "Login failed."));
     } finally {
       setLoading(false);
     }
@@ -68,6 +69,11 @@ export default function LoginPage() {
         <p className="text-center text-sm text-gray-600 mt-2">
           <Link to="/forgot-password" className="hover:text-gray-400 transition-colors">
             Forgot password?
+          </Link>
+        </p>
+        <p className="text-center text-xs text-gray-700 mt-3">
+          <Link to="/privacy-policy" className="hover:text-gray-500 transition-colors">
+            Privacy Policy
           </Link>
         </p>
       </div>

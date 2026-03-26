@@ -59,9 +59,11 @@ COPY supervisord.conf          /etc/supervisor/conf.d/supervisord.conf
 COPY wait-for-postgres.sh      /wait-for-postgres.sh
 COPY docker-entrypoint.sh      /docker-entrypoint.sh
 COPY start-telegram-bot.sh     /start-telegram-bot.sh
+COPY scripts/                  /scripts/
 
 RUN chmod +x /wait-for-postgres.sh /docker-entrypoint.sh /start-telegram-bot.sh \
- && mkdir -p /var/log/supervisor /uploads
+             /scripts/backup.sh /scripts/run-backup-cron.sh \
+ && mkdir -p /var/log/supervisor /uploads /var/backups/smartbudget
 
 EXPOSE 80
 CMD ["/docker-entrypoint.sh"]

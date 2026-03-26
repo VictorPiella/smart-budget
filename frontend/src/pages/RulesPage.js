@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import api from "../api";
+import api, { apiError } from "../api";
 import { useAccounts } from "../context/AccountContext";
 
 export default function RulesPage() {
@@ -41,7 +41,7 @@ export default function RulesPage() {
       setNewCatIsIncome(false);
       fetchAll();
     } catch (err) {
-      setCatError(err.response?.data?.detail || "Failed to create category.");
+      setCatError(apiError(err, "Failed to create category."));
     }
   };
 
@@ -61,7 +61,7 @@ export default function RulesPage() {
       setEditingCat(null);
       fetchAll();
     } catch (err) {
-      setCatError(err.response?.data?.detail || "Failed to update category.");
+      setCatError(apiError(err, "Failed to update category."));
     }
   };
 
@@ -80,7 +80,7 @@ export default function RulesPage() {
       fetchAll();
       fetchUnmappedCount();
     } catch (err) {
-      setRuleError(err.response?.data?.detail || "Failed to create rule.");
+      setRuleError(apiError(err, "Failed to create rule."));
     }
   };
 
@@ -117,7 +117,7 @@ export default function RulesPage() {
       fetchAll();
       fetchUnmappedCount();
     } catch (err) {
-      setEditRuleError(err.response?.data?.detail || "Failed to update rule.");
+      setEditRuleError(apiError(err, "Failed to update rule."));
     } finally {
       setEditRuleSaving(false);
     }

@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import api, { apiError } from "../api";
 import { useAuth } from "../context/AuthContext";
 
-export default function MagicLinkPage() {
+export default function VerifyEmailPage() {
   const [searchParams]      = useSearchParams();
   const { loginWithToken }  = useAuth();
   const navigate            = useNavigate();
@@ -14,21 +14,20 @@ export default function MagicLinkPage() {
     const token = searchParams.get("token");
     if (!token) {
       setStatus("error");
-      setErrorMsg("No token found in the link. Please request a new one.");
+      setErrorMsg("No verification token found. Please use the link from your email.");
       return;
     }
 
-    api.post("/auth/verify-magic-link", { token })
+    api.post("/auth/verify-email", { token })
       .then(({ data }) => {
         loginWithToken(data.access_token);
         setStatus("success");
-        // Brief pause so user sees the success state, then redirect
-        setTimeout(() => navigate("/", { replace: true }), 1200);
+        setTimeout(() => navigate("/", { replace: true }), 1500);
       })
       .catch((err) => {
         setStatus("error");
         setErrorMsg(
-          apiError(err, "This link is invalid or has expired.")
+          apiError(err, "This verification link is invalid or has expired.")
         );
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -41,34 +40,34 @@ export default function MagicLinkPage() {
 
         {status === "verifying" && (
           <>
-            <div className="text-3xl animate-pulse">🔐</div>
-            <p className="text-gray-400 text-sm">Verifying your link…</p>
+            <div className="text-3xl animate-pulse">📧</div>
+            <p className="text-gray-400 text-sm">Verifying your email…</p>
           </>
         )}
 
         {status === "success" && (
           <>
             <div className="text-3xl">✅</div>
-            <p className="text-green-400 font-semibold">Signed in! Redirecting…</p>
+            <p className="text-green-400 font-semibold">Email verified! Welcome aboard.</p>
+            <p className="text-gray-500 text-sm">Redirecting to your dashboard…</p>
           </>
         )}
 
         {status === "error" && (
           <>
             <div className="text-3xl">❌</div>
-            <p className="text-red-400 font-semibold">Link expired or invalid</p>
+            <p className="text-red-400 font-semibold">Verification failed</p>
             <p className="text-sm text-gray-400">{errorMsg}</p>
-            <Link
-              to="/forgot-password"
-              className="inline-block mt-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
-            >
-              Request a new link
-            </Link>
             <p className="text-xs text-gray-500 mt-2">
-              Or{" "}
+              Need a new link?{" "}
+              <Link to="/register" className="text-indigo-400 hover:underline">
+                Register again
+              </Link>{" "}
+              or{" "}
               <Link to="/login" className="text-indigo-400 hover:underline">
-                sign in with your password
+                sign in
               </Link>
+              .
             </p>
           </>
         )}

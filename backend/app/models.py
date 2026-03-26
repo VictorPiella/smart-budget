@@ -45,10 +45,19 @@ class MatchType(PyEnum):
 class User(Base):
     __tablename__ = "users"
 
-    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email         = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
-    created_at    = Column(DateTime, nullable=False, default=datetime.utcnow)
+    id               = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email            = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash    = Column(String(255), nullable=False)
+    created_at       = Column(DateTime,   nullable=False, default=datetime.utcnow)
+
+    # Magic-link / password-reset
+    reset_token      = Column(String(255), nullable=True,  default=None)
+    reset_token_exp  = Column(DateTime,    nullable=True,  default=None)
+
+    # Email verification
+    email_verified   = Column(Boolean,     nullable=False, default=True)
+    verify_token     = Column(String(255), nullable=True,  default=None)
+    verify_token_exp = Column(DateTime,    nullable=True,  default=None)
 
     accounts      = relationship("Account",     back_populates="user", cascade="all, delete-orphan")
     categories    = relationship("Category",    back_populates="user", cascade="all, delete-orphan")

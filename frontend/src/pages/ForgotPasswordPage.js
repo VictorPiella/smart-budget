@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import api from "../api";
+import api, { apiError } from "../api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail]       = useState("");
@@ -16,7 +16,7 @@ export default function ForgotPasswordPage() {
       await api.post("/auth/forgot-password", { email });
       setSent(true);
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+      setError(apiError(err, "Something went wrong. Please try again."));
     } finally {
       setLoading(false);
     }

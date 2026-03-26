@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import api from "../api";
+import api, { apiError } from "../api";
 import { useAccounts } from "../context/AccountContext";
 
 export default function InboxPage() {
@@ -64,9 +64,39 @@ export default function InboxPage() {
       await fetchData();
       fetchUnmappedCount();
     } catch (err) {
-      setRuleError(err.response?.data?.detail || "Failed to create rule.");
+      setRuleError(apiError(err, "Failed to create rule."));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── Inline edit state ────────────────────────────────────────────────────
+  const [editModal, setEditModal]   = useState(null); // transaction being edited
+  const [editForm, setEditForm]     = useState({ date: "", raw_description: "", amount: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError]   = useState("");
+
+  const openEdit = (txn) => {
+    setEditModal(txn);
+    setEditForm({ date: txn.date, raw_description: txn.raw_description, amount: String(txn.amount) });
+    setEditError("");
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    setEditError("");
+    setEditSaving(true);
+    try {
+      const res = await api.patch(
+        `/accounts/${selectedAccount.id}/transactions/${editModal.id}`,
+        { date: editForm.date, raw_description: editForm.raw_description, amount: parseFloat(editForm.amount) },
+      );
+      setTransactions((prev) => prev.map((t) => (t.id === editModal.id ? res.data : t)));
+      setEditModal(null);
+    } catch (err) {
+      setEditError(apiError(err, "Failed to save."));
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -184,6 +214,7 @@ export default function InboxPage() {
                     <th className="text-left py-2 pr-4">Description</th>
                     <th className="text-right py-2 pr-4">Amount</th>
                     <th className="py-2 pr-4">Assign</th>
+                    <th className="py-2 pr-2"></th>
                     <th className="py-2"></th>
                   </tr>
                 </thead>
@@ -223,6 +254,15 @@ export default function InboxPage() {
                           ))}
                         </select>
                       </td>
+                      <td className="py-2 pr-2">
+                        <button
+                          onClick={() => openEdit(t)}
+                          title="Edit transaction"
+                          className="text-gray-500 hover:text-indigo-400 transition-colors px-1"
+                        >
+                          ✎
+                        </button>
+                      </td>
                       <td className="py-2 text-right">
                         <button
                           onClick={() => openModal(t)}
@@ -243,6 +283,63 @@ export default function InboxPage() {
           </>
         )}
       </div>
+
+      {editModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-lg font-semibold">Edit Transaction</h2>
+            <form onSubmit={handleSaveEdit} className="space-y-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400">Date</label>
+                <input
+                  type="date"
+                  value={editForm.date}
+                  onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))}
+                  required
+                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400">Description</label>
+                <input
+                  value={editForm.raw_description}
+                  onChange={(e) => setEditForm((f) => ({ ...f, raw_description: e.target.value }))}
+                  required
+                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400">Amount <span className="text-gray-500">(negative = expense, positive = income)</span></label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.amount}
+                  onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))}
+                  required
+                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              {editError && <p className="text-red-400 text-xs">{editError}</p>}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded transition-colors"
+                >
+                  {editSaving ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditModal(null)}
+                  className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {ruleModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
