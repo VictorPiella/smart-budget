@@ -8,6 +8,20 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// If any authenticated request comes back 401 (expired/invalid token), clear the
+// session and send the user to login — instead of silently showing empty data.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401 && localStorage.getItem("token")) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("email");
+      window.location.href = "/login";
+    }
+    return Promise.reject(error);
+  }
+);
+
 /**
  * Extract a human-readable message from an axios error.
  * Handles both plain-string detail ("Email already registered.")
