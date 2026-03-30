@@ -99,6 +99,7 @@ class Category(Base):
     name                        = Column(String(100), nullable=False)
     color                       = Column(String(7),   nullable=False, default="#6366f1")
     is_income                   = Column(Boolean,     nullable=False, default=False)
+    exclude_from_totals         = Column(Boolean,     nullable=False, default=False)
     investment_value            = Column(Numeric(14, 2), nullable=True,  default=None)
     investment_value_updated_at = Column(DateTime,       nullable=True,  default=None)
     created_at                  = Column(DateTime,    nullable=False, default=datetime.utcnow)

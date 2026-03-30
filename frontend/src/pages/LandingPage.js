@@ -125,8 +125,8 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-lg text-gray-400 max-w-xl mx-auto mb-10 leading-relaxed">
-            Import bank CSVs, auto-categorise transactions with smart rules,
-            review spending trends — all in one private dashboard you control.
+            Forward your Trade Republic PDF to a Telegram bot, auto-categorise with smart rules,
+            and review spending trends — all in one private dashboard you host yourself.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -214,9 +214,9 @@ export default function LandingPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             <FeatureCard accent="indigo"
-              icon="📤"
-              title="One-click CSV import"
-              body="Drop any bank export and SmartBudget auto-detects date, description and amount columns. 50,000 rows in seconds." />
+              icon="✈️"
+              title="Telegram auto-import"
+              body="Forward your Trade Republic PDF to the bot. It parses every transaction and pushes it into your account — no CSV export, no copy-paste." />
             <FeatureCard accent="violet"
               icon="🤖"
               title="Automatic rule engine"
@@ -278,6 +278,96 @@ export default function LandingPage() {
                 <span className="text-[11px] text-indigo-400 cursor-pointer hover:underline">+ Add rule</span>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── TELEGRAM BOT ────────────────────────────────────────────────── */}
+      <section className="py-24 px-6">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-14 items-center">
+
+          {/* mock Telegram chat */}
+          <div className="order-2 md:order-1 rounded-2xl border border-gray-700/60 bg-gray-900 overflow-hidden shadow-2xl shadow-black/60">
+            {/* chat header */}
+            <div className="px-4 py-3 bg-[#17212b] border-b border-gray-800/80 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-base shrink-0">🤖</div>
+              <div>
+                <p className="text-sm font-semibold text-white">SmartBudget Bot</p>
+                <p className="text-[11px] text-emerald-400">online</p>
+              </div>
+            </div>
+            {/* messages */}
+            <div className="p-4 space-y-3 bg-[#0e1621] min-h-[300px]">
+              {/* user — forwarded PDF */}
+              <div className="flex justify-end">
+                <div className="bg-[#2b5278] rounded-2xl rounded-tr-sm px-3 py-2 max-w-[80%]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-red-400 text-xl">📄</span>
+                    <div>
+                      <p className="text-xs font-medium text-white leading-tight">Trade_Republic_Mar2026.pdf</p>
+                      <p className="text-[10px] text-gray-400">847 KB</p>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1 text-right">14:32</p>
+                </div>
+              </div>
+              {/* bot — parsing */}
+              <div className="flex justify-start">
+                <div className="bg-[#182533] rounded-2xl rounded-tl-sm px-3 py-2.5 max-w-[85%]">
+                  <p className="text-xs text-gray-300">⚙️ Parsing Trade Republic PDF…</p>
+                  <p className="text-xs text-emerald-400 mt-1">✅ Found 14 transactions</p>
+                  <p className="text-[10px] text-gray-600 mt-1">14:32</p>
+                </div>
+              </div>
+              {/* bot — summary */}
+              <div className="flex justify-start">
+                <div className="bg-[#182533] rounded-2xl rounded-tl-sm px-3 py-2.5 max-w-[92%]">
+                  <p className="text-xs font-semibold text-white mb-2">Import complete 🎉</p>
+                  <p className="text-xs text-gray-300 mb-2">
+                    📥 <span className="text-white font-medium">14 imported</span>
+                    <span className="text-gray-600"> · 0 duplicates</span>
+                  </p>
+                  <div className="space-y-1 border-t border-gray-700/50 pt-2">
+                    <p className="text-[11px] text-gray-400">Mar 20 · NETFLIX.COM · <span className="text-red-400">−€15.99</span> <span className="text-gray-600">→</span> <span className="text-red-400">🎬 Streaming</span></p>
+                    <p className="text-[11px] text-gray-400">Mar 22 · MERCADONA 1248 · <span className="text-red-400">−€67.35</span> <span className="text-gray-600">→</span> <span className="text-lime-400">🛒 Groceries</span></p>
+                    <p className="text-[11px] text-gray-400">Mar 25 · SALARY ACME CORP · <span className="text-emerald-400">+€3,500.00</span> <span className="text-gray-600">→</span> <span className="text-emerald-400">💼 Income</span></p>
+                    <p className="text-[11px] text-gray-600 italic">+11 more…</p>
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-2">14:32</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* copy */}
+          <div className="order-1 md:order-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 text-sky-300 text-xs font-medium mb-5">
+              <span className="text-base">✈️</span> Telegram · Zero-friction import
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-4 leading-tight">
+              Forward a PDF.<br />Done.
+            </h2>
+            <p className="text-gray-400 mb-7 leading-relaxed">
+              The SmartBudget Telegram bot has native support for <span className="text-white font-medium">Trade Republic</span> monthly
+              statements. Forward the PDF — the bot parses every transaction, deduplicates against what's already in your account,
+              and pushes everything in seconds. No CSV export. No copy-paste. No manual work.
+            </p>
+            <ul className="space-y-4">
+              {[
+                ["📄", "Trade Republic PDF support",   "Native parser for TR statement format — works directly with the PDF you already receive every month."],
+                ["🔁", "Deduplication built-in",       "Re-send the same PDF whenever you want. Already-imported transactions are silently skipped via checksum."],
+                ["🏷️", "Rules fire on every import",  "Your mapping rules run automatically on each transaction the moment it lands — inbox stays clean."],
+                ["🔐", "Talks to your own server",     "The bot calls your self-hosted instance directly. Your financial data never touches a third-party service."],
+              ].map(([icon, title, desc]) => (
+                <li key={title} className="flex gap-3 items-start">
+                  <span className="text-xl mt-0.5 shrink-0">{icon}</span>
+                  <div>
+                    <p className="font-semibold text-white text-sm">{title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{desc}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </section>

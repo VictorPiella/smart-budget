@@ -9,6 +9,7 @@ export default function RulesPage() {
   const [newCatName, setNewCatName] = useState("");
   const [newCatColor, setNewCatColor] = useState("#6366f1");
   const [newCatIsIncome, setNewCatIsIncome] = useState(false);
+  const [newCatExclude, setNewCatExclude] = useState(false);
   const [catError, setCatError] = useState("");
   const [ruleForm, setRuleForm] = useState({ category_id: "", pattern: "", match_type: "contains", priority: 0 });
   const [ruleError, setRuleError] = useState("");
@@ -35,10 +36,11 @@ export default function RulesPage() {
     e.preventDefault();
     setCatError("");
     try {
-      await api.post(`/accounts/${selectedAccount.id}/categories`, { name: newCatName, color: newCatColor, is_income: newCatIsIncome });
+      await api.post(`/accounts/${selectedAccount.id}/categories`, { name: newCatName, color: newCatColor, is_income: newCatIsIncome, exclude_from_totals: newCatExclude });
       setNewCatName("");
       setNewCatColor("#6366f1");
       setNewCatIsIncome(false);
+      setNewCatExclude(false);
       fetchAll();
     } catch (err) {
       setCatError(apiError(err, "Failed to create category."));
@@ -54,9 +56,10 @@ export default function RulesPage() {
   const handleUpdateCat = async (cat) => {
     try {
       await api.patch(`/accounts/${selectedAccount.id}/categories/${cat.id}`, {
-        name: cat.name,
-        color: cat.color,
-        is_income: cat.is_income,
+        name:                cat.name,
+        color:               cat.color,
+        is_income:           cat.is_income,
+        exclude_from_totals: cat.exclude_from_totals,
       });
       setEditingCat(null);
       fetchAll();
@@ -162,15 +165,26 @@ export default function RulesPage() {
                       />
                     </div>
                     <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={editingCat.is_income}
-                          onChange={(e) => setEditingCat({ ...editingCat, is_income: e.target.checked })}
-                          className="accent-green-500"
-                        />
-                        Income category
-                      </label>
+                      <div className="flex flex-col gap-1">
+                        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editingCat.is_income}
+                            onChange={(e) => setEditingCat({ ...editingCat, is_income: e.target.checked })}
+                            className="accent-green-500"
+                          />
+                          Income category
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editingCat.exclude_from_totals}
+                            onChange={(e) => setEditingCat({ ...editingCat, exclude_from_totals: e.target.checked })}
+                            className="accent-amber-500"
+                          />
+                          Exclude from totals
+                        </label>
+                      </div>
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleUpdateCat(editingCat)}
@@ -197,6 +211,9 @@ export default function RulesPage() {
                       <span className="text-sm">{c.name}</span>
                       {c.is_income && (
                         <span className="text-xs text-green-400 bg-green-900/30 px-1.5 py-0.5 rounded">income</span>
+                      )}
+                      {c.exclude_from_totals && (
+                        <span className="text-xs text-amber-400 bg-amber-900/30 px-1.5 py-0.5 rounded">excluded</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -250,6 +267,15 @@ export default function RulesPage() {
                 className="accent-green-500"
               />
               Income category
+            </label>
+            <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newCatExclude}
+                onChange={(e) => setNewCatExclude(e.target.checked)}
+                className="accent-amber-500"
+              />
+              Exclude from totals
             </label>
           </form>
         </div>

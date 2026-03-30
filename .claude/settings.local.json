@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -v -X POST http://localhost/api/auth/login -H \"Content-Type: application/x-www-form-urlencoded\" -H \"Origin: http://localhost\" -d \"username=test@test.com&password=Test1234\")",
+      "Bash(docker compose:*)"
+    ]
+  }
+}

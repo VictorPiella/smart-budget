@@ -262,9 +262,15 @@ export default function ReviewPage() {
               </thead>
               <tbody>
                 {pivotRows.map((row) => (
-                  <tr key={row.category_name} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                    <td className="py-2 pr-4 font-medium" style={{ color: row.category_color }}>
+                  <tr
+                    key={row.category_name}
+                    className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${row.exclude_from_totals ? "opacity-50" : ""}`}
+                  >
+                    <td className="py-2 pr-4 font-medium whitespace-nowrap" style={{ color: row.exclude_from_totals ? "#9ca3af" : row.category_color }}>
                       {row.category_name}
+                      {row.exclude_from_totals && (
+                        <span className="ml-2 text-[10px] font-normal text-amber-500 bg-amber-900/30 px-1.5 py-0.5 rounded align-middle">excluded</span>
+                      )}
                     </td>
                     {[1,2,3,4,5,6,7,8,9,10,11,12].map((m, i) => {
                       const v = row.monthly_totals[m] ?? 0;
@@ -272,17 +278,17 @@ export default function ReviewPage() {
                         <td
                           key={m}
                           className={`py-2 px-2 text-right font-mono text-xs rounded ${
-                            v !== 0 ? "cursor-pointer hover:bg-gray-700/50" : ""
-                          } ${v < 0 ? "text-red-400" : v > 0 ? "text-green-400" : "text-gray-600"}`}
-                          onClick={() => v !== 0 && jumpToMonth(i)}
-                          title={v !== 0 ? `View ${MONTHS[i]} ${year}` : undefined}
+                            v !== 0 && !row.exclude_from_totals ? "cursor-pointer hover:bg-gray-700/50" : ""
+                          } ${row.exclude_from_totals ? "text-gray-600" : v < 0 ? "text-red-400" : v > 0 ? "text-green-400" : "text-gray-600"}`}
+                          onClick={() => v !== 0 && !row.exclude_from_totals && jumpToMonth(i)}
+                          title={v !== 0 && !row.exclude_from_totals ? `View ${MONTHS[i]} ${year}` : undefined}
                         >
                           {v !== 0 ? v.toFixed(0) : "—"}
                         </td>
                       );
                     })}
                     <td className={`py-2 pl-4 text-right font-mono font-semibold ${
-                      row.yearly_total < 0 ? "text-red-400" : "text-green-400"
+                      row.exclude_from_totals ? "text-gray-600" : row.yearly_total < 0 ? "text-red-400" : "text-green-400"
                     }`}>
                       {row.yearly_total.toFixed(2)}
                     </td>

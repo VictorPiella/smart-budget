@@ -108,6 +108,8 @@ with engine.connect() as _conn:
     _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_txn_account_cat  ON transactions(account_id, category_id)"))
     _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_rules_account_id ON mapping_rules(account_id)"))
     _conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cats_account_id  ON categories(account_id)"))
+    # ── Exclude-from-totals flag ─────────────────────────────────────────────
+    _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS exclude_from_totals BOOLEAN NOT NULL DEFAULT FALSE"))
     # ── Investment tracker columns ────────────────────────────────────────────
     _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value NUMERIC(14,2) DEFAULT NULL"))
     _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value_updated_at TIMESTAMP DEFAULT NULL"))
@@ -357,25 +359,28 @@ class AccountOut(BaseModel):
         from_attributes = True
 
 class CategoryCreate(BaseModel):
-    name:      str
-    color:     str = "#6366f1"
-    is_income: bool = False
+    name:                str
+    color:               str  = "#6366f1"
+    is_income:           bool = False
+    exclude_from_totals: bool = False
 
 class CategoryOut(BaseModel):
     id:                          uuid.UUID
     name:                        str
     color:                       str
     is_income:                   bool
+    exclude_from_totals:         bool               = False
     investment_value:            Optional[float]    = None
     investment_value_updated_at: Optional[datetime] = None
     class Config:
         from_attributes = True
 
 class CategoryUpdate(BaseModel):
-    name:             Optional[str]   = None
-    color:            Optional[str]   = None
-    is_income:        Optional[bool]  = None
-    investment_value: Optional[float] = None
+    name:                Optional[str]   = None
+    color:               Optional[str]   = None
+    is_income:           Optional[bool]  = None
+    exclude_from_totals: Optional[bool]  = None
+    investment_value:    Optional[float] = None
 
 class MappingRuleCreate(BaseModel):
     category_id: uuid.UUID
@@ -948,11 +953,12 @@ def create_category(
     ).first():
         raise HTTPException(status_code=409, detail="Category already exists.")
     cat = Category(
-        user_id    = current_user.id,
-        account_id = account_id,
-        name       = payload.name,
-        color      = payload.color,
-        is_income  = payload.is_income,
+        user_id             = current_user.id,
+        account_id          = account_id,
+        name                = payload.name,
+        color               = payload.color,
+        is_income           = payload.is_income,
+        exclude_from_totals = payload.exclude_from_totals,
     )
     db.add(cat)
     db.commit()
@@ -1001,6 +1007,8 @@ def update_category(
         cat.color = payload.color
     if payload.is_income is not None:
         cat.is_income = payload.is_income
+    if payload.exclude_from_totals is not None:
+        cat.exclude_from_totals = payload.exclude_from_totals
     if payload.investment_value is not None:
         cat.investment_value            = payload.investment_value
         cat.investment_value_updated_at = datetime.utcnow()
@@ -1535,9 +1543,13 @@ def get_yearly_summary(
         pivot_raw.setdefault(key, {})[row.month] = float(row.total)
 
     # Monthly chart data (income / expenses per month, all 12 months)
+    # Categories flagged exclude_from_totals are intentionally omitted from the chart.
     income_by_month   = {m: 0.0 for m in range(1, 13)}
     expenses_by_month = {m: 0.0 for m in range(1, 13)}
-    for months in pivot_raw.values():
+    for key, months in pivot_raw.items():
+        cat_obj = cat_map.get(key) if key else None
+        if cat_obj and cat_obj.exclude_from_totals:
+            continue
         for m, total in months.items():
             if total >= 0:
                 income_by_month[m]   += total
@@ -1557,25 +1569,28 @@ def get_yearly_summary(
     pivot_rows = []
     for key, months in pivot_raw.items():
         if key is None:
-            cat_name  = "Uncategorized"
-            cat_color = "#6b7280"
-            is_income = False
+            cat_name            = "Uncategorized"
+            cat_color           = "#6b7280"
+            is_income           = False
+            exclude_from_totals = False
         else:
-            cat       = cat_map.get(key)
-            cat_name  = cat.name      if cat else "Unknown"
-            cat_color = cat.color     if cat else "#6b7280"
-            is_income = cat.is_income if cat else False
+            cat                 = cat_map.get(key)
+            cat_name            = cat.name                if cat else "Unknown"
+            cat_color           = cat.color               if cat else "#6b7280"
+            is_income           = cat.is_income           if cat else False
+            exclude_from_totals = cat.exclude_from_totals if cat else False
 
         monthly_totals = {m: round(months.get(m, 0.0), 2) for m in range(1, 13)}
         yearly_total   = round(sum(monthly_totals.values()), 2)
 
         pivot_rows.append({
-            "category_id":    key,
-            "category_name":  cat_name,
-            "category_color": cat_color,
-            "is_income":      is_income,
-            "monthly_totals": monthly_totals,
-            "yearly_total":   yearly_total,
+            "category_id":          key,
+            "category_name":        cat_name,
+            "category_color":       cat_color,
+            "is_income":            is_income,
+            "exclude_from_totals":  exclude_from_totals,
+            "monthly_totals":       monthly_totals,
+            "yearly_total":         yearly_total,
         })
 
     # Expenses first, then income; within each group sort by abs total descending
