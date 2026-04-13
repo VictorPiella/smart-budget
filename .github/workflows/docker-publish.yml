@@ -37,3 +37,23 @@ jobs:
             ${{ secrets.DOCKER_USER }}/smart-budget:${{ github.sha }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
+
+  deploy:
+    name: Deploy to production
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # Only deploy when PROD_HOST secret is configured
+    if: ${{ secrets.PROD_HOST != '' }}
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ubuntu
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd ~/smartbudget
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f

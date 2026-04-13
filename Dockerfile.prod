@@ -25,7 +25,7 @@ ENV QT_QPA_PLATFORM=offscreen \
 # System packages: postgres, nginx, supervisor + X11/GL shims for docling.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      postgresql nginx supervisor \
+      postgresql nginx supervisor awscli \
       libxcb1 libxcb-shm0 libxcb-xfixes0 libxcb-render0 \
       libxext6 libx11-6 \
       libgl1 libglib2.0-0 \

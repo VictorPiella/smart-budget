@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # backup.sh — nightly PostgreSQL backup inside the SmartBudget container
 #
-# Keeps the last 7 daily backups in /var/backups/smartbudget/.
+# Keeps the last 7 daily backups locally. If S3_BACKUP_BUCKET is set, also
+# uploads to S3 (30-day retention managed by an S3 Lifecycle rule).
 # Run automatically via supervisord (see supervisord.conf [program:backup-cron]).
 # Can also be triggered manually inside the container:
-#   docker exec smartbudget /scripts/backup.sh
+#   docker exec budget_app /scripts/backup.sh
 
 set -euo pipefail
 
@@ -26,7 +27,14 @@ PGPASSWORD="${POSTGRES_PASSWORD:-password}" \
 
 echo "[backup] Done. Size: $(du -sh "${BACKUP_DIR}/${FILENAME}" | cut -f1)"
 
-# Remove backups older than KEEP_DAYS days
+# Upload to S3 if configured
+if [ -n "${S3_BACKUP_BUCKET:-}" ]; then
+  echo "[backup] Uploading to s3://${S3_BACKUP_BUCKET}/backups/${FILENAME}"
+  aws s3 cp "${BACKUP_DIR}/${FILENAME}" "s3://${S3_BACKUP_BUCKET}/backups/${FILENAME}"
+  echo "[backup] S3 upload complete."
+fi
+
+# Remove local backups older than KEEP_DAYS days
 find "${BACKUP_DIR}" -name "smartbudget-*.sql.gz" \
   -mtime "+${KEEP_DAYS}" -delete
 

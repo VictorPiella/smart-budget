@@ -173,12 +173,13 @@ class InvestmentSnapshot(Base):
     """
     __tablename__ = "investment_snapshots"
 
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    account_id  = Column(UUID(as_uuid=True), ForeignKey("accounts.id",   ondelete="CASCADE"), nullable=False, index=True)
-    category_id = Column(UUID(as_uuid=True), ForeignKey("categories.id", ondelete="CASCADE"), nullable=False, index=True)
-    year        = Column(Integer,            nullable=False)
-    value       = Column(Numeric(14, 2),     nullable=False)
-    updated_at  = Column(DateTime,           nullable=False, default=datetime.utcnow)
+    id                  = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id          = Column(UUID(as_uuid=True), ForeignKey("accounts.id",   ondelete="CASCADE"), nullable=False, index=True)
+    category_id         = Column(UUID(as_uuid=True), ForeignKey("categories.id", ondelete="CASCADE"), nullable=False, index=True)
+    year                = Column(Integer,            nullable=False)
+    value               = Column(Numeric(14, 2),     nullable=True)   # NULL = not yet entered
+    manual_contribution = Column(Numeric(14, 2),     nullable=True)   # overrides transaction sum when set
+    updated_at          = Column(DateTime,           nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint("account_id", "category_id", "year", name="uq_investment_snapshot"),

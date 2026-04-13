@@ -52,6 +52,11 @@ if not SECRET_KEY:
         "SECRET_KEY environment variable is required. "
         "Generate a strong value with: openssl rand -hex 32"
     )
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost,http://127.0.0.1").split(",")
+    if o.strip()
+]
 ALGORITHM                   = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 8)))  # 8 h default
 
@@ -113,6 +118,8 @@ with engine.connect() as _conn:
     # ── Investment tracker columns ────────────────────────────────────────────
     _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value NUMERIC(14,2) DEFAULT NULL"))
     _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value_updated_at TIMESTAMP DEFAULT NULL"))
+    _conn.execute(text("ALTER TABLE investment_snapshots ALTER COLUMN value DROP NOT NULL"))
+    _conn.execute(text("ALTER TABLE investment_snapshots ADD COLUMN IF NOT EXISTS manual_contribution NUMERIC(14,2) DEFAULT NULL"))
     # ── Magic-link / password-reset columns ──────────────────────────────────
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token     VARCHAR(255) NULL"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_exp TIMESTAMP   NULL"))
@@ -277,7 +284,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost", "http://127.0.0.1"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
@@ -1087,23 +1094,28 @@ def get_investment_totals(
 # ---------------------------------------------------------------------------
 
 class InvestmentSnapshotIn(BaseModel):
-    category_id: uuid.UUID
-    year:        int
-    value:       float
+    category_id:         uuid.UUID
+    year:                int
+    value:               Optional[float] = None   # market value at year-end; null = not entered
+    manual_contribution: Optional[float] = None   # overrides transaction sum for this year
 
 class InvestmentSnapshotOut(BaseModel):
-    category_id: uuid.UUID
-    year:        int
-    value:       float
-    updated_at:  datetime
+    category_id:         uuid.UUID
+    year:                int
+    value:               Optional[float]
+    manual_contribution: Optional[float] = None
+    updated_at:          datetime
     class Config:
         from_attributes = True
 
 class InvestmentYearRow(BaseModel):
-    year:               int
-    contributed:        float   # raw SUM for that year (may be negative)
-    cumulative:         float   # running sum of contributions up to this year
-    snapshot_value:     Optional[float]    = None
+    year:                int
+    contributed:         float   # effective contribution: manual_contribution if set, else transaction sum
+    tx_contributed:      float   # raw transaction sum for this year (always from DB)
+    is_manual:           bool    # True when contributed comes from manual_contribution
+    cumulative:          float   # running sum of effective contributions up to this year
+    snapshot_value:      Optional[float]    = None
+    manual_contribution: Optional[float]    = None
     snapshot_updated_at: Optional[datetime] = None
 
 class InvestmentCategorySummary(BaseModel):
@@ -1125,9 +1137,19 @@ def upsert_investment_snapshot(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(get_current_user),
 ):
-    """Create or update the market value snapshot for a category + year."""
+    """Create or update the market value snapshot and/or manual contribution for a category + year."""
     _verify_account(account_id, current_user, db)
+    if payload.value is None and payload.manual_contribution is None:
+        raise HTTPException(status_code=422, detail="At least one of value or manual_contribution must be provided.")
     now = datetime.utcnow()
+
+    # Build the set_ dict for upsert — only update fields that were provided
+    update_fields: dict = {"updated_at": now}
+    if payload.value is not None:
+        update_fields["value"] = payload.value
+    if payload.manual_contribution is not None:
+        update_fields["manual_contribution"] = payload.manual_contribution
+
     stmt = (
         pg_insert(InvestmentSnapshot)
         .values(
@@ -1136,23 +1158,30 @@ def upsert_investment_snapshot(
             category_id=payload.category_id,
             year=payload.year,
             value=payload.value,
+            manual_contribution=payload.manual_contribution,
             updated_at=now,
         )
         .on_conflict_do_update(
             constraint="uq_investment_snapshot",
-            set_={"value": payload.value, "updated_at": now},
+            set_=update_fields,
         )
         .returning(
             InvestmentSnapshot.category_id,
             InvestmentSnapshot.year,
             InvestmentSnapshot.value,
+            InvestmentSnapshot.manual_contribution,
             InvestmentSnapshot.updated_at,
         )
     )
     row = db.execute(stmt).fetchone()
     db.commit()
-    return {"category_id": row.category_id, "year": row.year,
-            "value": float(row.value), "updated_at": row.updated_at}
+    return {
+        "category_id":         row.category_id,
+        "year":                row.year,
+        "value":               float(row.value) if row.value is not None else None,
+        "manual_contribution": float(row.manual_contribution) if row.manual_contribution is not None else None,
+        "updated_at":          row.updated_at,
+    }
 
 
 @app.get("/accounts/{account_id}/investment-summary", response_model=List[InvestmentCategorySummary], tags=["Investments"])
@@ -1192,9 +1221,9 @@ def get_investment_summary(
         ORDER  BY category_id, yr
     """), {"account_id": str(account_id), **id_params}).fetchall()
 
-    # Stored snapshots
+    # Stored snapshots (including manual_contribution overrides)
     snap_rows = db.execute(text(f"""
-        SELECT category_id, year, value, updated_at
+        SELECT category_id, year, value, manual_contribution, updated_at
         FROM   investment_snapshots
         WHERE  account_id  = :account_id
           AND  category_id::text IN ({in_clause})
@@ -1209,7 +1238,9 @@ def get_investment_summary(
     snap_map: Dict[str, Dict[int, dict]] = {}
     for r in snap_rows:
         snap_map.setdefault(str(r.category_id), {})[r.year] = {
-            "value": float(r.value), "updated_at": r.updated_at
+            "value":               float(r.value) if r.value is not None else None,
+            "manual_contribution": float(r.manual_contribution) if r.manual_contribution is not None else None,
+            "updated_at":          r.updated_at,
         }
 
     result = []
@@ -1221,15 +1252,22 @@ def get_investment_summary(
         cumulative    = 0.0
         year_rows     = []
         for yr in all_years:
-            # abs() so investment expenses (negative amounts) show as positive contributions
-            contributed = abs(contrib_years.get(yr, 0.0))
-            cumulative += contributed
-            snap        = snap_years.get(yr)
+            tx_contributed = abs(contrib_years.get(yr, 0.0))
+            snap           = snap_years.get(yr)
+            manual_contrib = snap["manual_contribution"] if snap else None
+            # Use manual_contribution when set (covers gap years without transactions)
+            # otherwise fall back to the transaction sum.
+            is_manual    = manual_contrib is not None
+            contributed  = manual_contrib if is_manual else tx_contributed
+            cumulative  += contributed
             year_rows.append(InvestmentYearRow(
                 year=yr,
                 contributed=round(contributed, 2),
+                tx_contributed=round(tx_contributed, 2),
+                is_manual=is_manual,
                 cumulative=round(cumulative, 2),
-                snapshot_value=round(snap["value"], 2) if snap else None,
+                snapshot_value=round(snap["value"], 2) if snap and snap["value"] is not None else None,
+                manual_contribution=round(manual_contrib, 2) if manual_contrib is not None else None,
                 snapshot_updated_at=snap["updated_at"] if snap else None,
             ))
         result.append(InvestmentCategorySummary(category_id=key, years=year_rows))
@@ -1957,9 +1995,10 @@ def export_data(
             ],
             "investment_snapshots": [
                 {
-                    "category_name": cat_id_to_name.get(str(s.category_id), ""),
-                    "year":          s.year,
-                    "value":         float(s.value),
+                    "category_name":      cat_id_to_name.get(str(s.category_id), ""),
+                    "year":               s.year,
+                    "value":              float(s.value) if s.value is not None else None,
+                    "manual_contribution": float(s.manual_contribution) if s.manual_contribution is not None else None,
                 }
                 for s in snaps
             ],
@@ -2101,6 +2140,8 @@ async def import_data(
             cat_id = name_to_cat_id.get(snap_data.get("category_name", ""))
             if not cat_id:
                 continue
+            snap_value   = snap_data.get("value")
+            manual_contr = snap_data.get("manual_contribution")
             stmt = (
                 pg_insert(InvestmentSnapshot)
                 .values(
@@ -2108,12 +2149,17 @@ async def import_data(
                     account_id=acc.id,
                     category_id=cat_id,
                     year=snap_data["year"],
-                    value=snap_data["value"],
+                    value=snap_value,
+                    manual_contribution=manual_contr,
                     updated_at=datetime.utcnow(),
                 )
                 .on_conflict_do_update(
                     constraint="uq_investment_snapshot",
-                    set_={"value": snap_data["value"], "updated_at": datetime.utcnow()},
+                    set_={
+                        "value":               snap_value,
+                        "manual_contribution": manual_contr,
+                        "updated_at":          datetime.utcnow(),
+                    },
                 )
             )
             db.execute(stmt)
