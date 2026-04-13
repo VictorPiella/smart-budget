@@ -8,7 +8,7 @@ import { useAccounts } from "../context/AccountContext";
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-const LS_KEY = "investmentCatIds";
+const lsKey = (accountId) => `investmentCatIds-${accountId}`;
 
 function fmt(n, currency = "EUR") {
   return new Intl.NumberFormat("es-ES", {
@@ -37,10 +37,7 @@ export default function InvestmentPage() {
 
   const [year, setYear]             = useState(new Date().getFullYear());
   const [categories, setCategories] = useState([]);
-  const [selectedIds, setSelectedIds] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(LS_KEY) || "[]")); }
-    catch { return new Set(); }
-  });
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   const [summaryData, setSummaryData]     = useState(null); // bar-chart data
   const [investSummary, setInvestSummary] = useState([]);   // all-years snapshot data
@@ -54,6 +51,18 @@ export default function InvestmentPage() {
   const [dirtyContribs, setDirtyContribs]   = useState({});
   const [savingContrib, setSavingContrib]   = useState(null); // `${catId}-${year}`
   const [saveContribErr, setSaveContribErr] = useState({});   // `${catId}-${year}` → string
+
+  // ── Restore selected investment categories when account changes ───────────
+
+  useEffect(() => {
+    if (!selectedAccount) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(lsKey(selectedAccount.id)) || "[]");
+      setSelectedIds(new Set(saved));
+    } catch {
+      setSelectedIds(new Set());
+    }
+  }, [selectedAccount]);
 
   // ── Fetch categories ──────────────────────────────────────────────────────
 
@@ -100,7 +109,9 @@ export default function InvestmentPage() {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
-      localStorage.setItem(LS_KEY, JSON.stringify([...next]));
+      if (selectedAccount) {
+        localStorage.setItem(lsKey(selectedAccount.id), JSON.stringify([...next]));
+      }
       return next;
     });
     setDirtyInputs((prev) => {

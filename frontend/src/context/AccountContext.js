@@ -28,6 +28,9 @@ export function AccountProvider({ children }) {
     }
   }, []);
 
+  // Auto-fetch accounts on mount so any page works after a direct navigation or refresh.
+  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
   // Refresh the unmapped-transaction badge count for the active account.
   // Call this from any page that changes categorisation state.
   const fetchUnmappedCount = useCallback(async () => {
