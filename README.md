@@ -1,10 +1,42 @@
+<div align="center">
+
 # SmartBudget Tracker
 
-A self-hosted, multi-account personal finance tracker. Import bank CSVs, build auto-categorisation rules, review spending in a yearly/monthly pivot, and track your investment portfolio — all running privately in Docker.
+**Self-hosted personal finance tracker — import any bank CSV, auto-categorise with smart rules, review spending, and track your investment portfolio. Your data stays on your server.**
 
-![Stack](https://img.shields.io/badge/stack-FastAPI%20%7C%20React%20%7C%20PostgreSQL%20%7C%20Docker-blue)
-![CI](https://github.com/VictorPiella/smart-budget/actions/workflows/docker-publish.yml/badge.svg)
-![Landing](https://img.shields.io/badge/landing-GitHub%20Pages-brightgreen)
+[![CI](https://github.com/VictorPiella/smart-budget/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/VictorPiella/smart-budget/actions/workflows/docker-publish.yml)
+[![Live Demo](https://img.shields.io/badge/landing-GitHub%20Pages-brightgreen)](https://victorpiella.github.io/smart-budget/)
+[![Stack](https://img.shields.io/badge/stack-FastAPI%20%7C%20React%20%7C%20PostgreSQL%20%7C%20Docker-blue)](#tech-stack)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
+
+[**Live Landing Page →**](https://victorpiella.github.io/smart-budget/)
+
+</div>
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><b>Dashboard</b></td>
+    <td align="center"><b>Review — Yearly Pivot</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/dashboard.png" alt="Dashboard" width="100%"/></td>
+    <td><img src="docs/screenshots/review.png" alt="Review pivot table" width="100%"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Inbox — Unmapped Triage</b></td>
+    <td align="center"><b>Investment Tracker</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/inbox.png" alt="Unmapped inbox" width="100%"/></td>
+    <td><img src="docs/screenshots/investments.png" alt="Investment tracker" width="100%"/></td>
+  </tr>
+</table>
+
+> **Add screenshots:** Take a browser screenshot of each page and save them in `docs/screenshots/` with the filenames above.
 
 ---
 
@@ -39,82 +71,21 @@ A self-hosted, multi-account personal finance tracker. Import bank CSVs, build a
 
 ---
 
-## Project Structure
-
-```
-smart-budget/
-├── backend/
-│   ├── app/
-│   │   ├── main.py          # All FastAPI routes + startup migrations + mapping engine
-│   │   └── models.py        # SQLAlchemy models
-│   ├── Dockerfile           # Dev image (uvicorn --reload)
-│   ├── Dockerfile.prod      # Production image (uvicorn, 2 workers)
-│   └── requirements.txt
-├── frontend/
-│   ├── public/
-│   │   ├── index.html       # SPA entry + GitHub Pages redirect handler
-│   │   └── 404.html         # GitHub Pages deep-link redirect
-│   ├── src/
-│   │   ├── api.js           # Axios instance (baseURL=/api, Bearer token)
-│   │   ├── context/
-│   │   │   ├── AccountContext.js   # Global account state
-│   │   │   └── AuthContext.js      # JWT auth state
-│   │   ├── components/
-│   │   │   └── Layout.js    # Top-bar nav, account picker, change-password modal
-│   │   └── pages/
-│   │       ├── LandingPage.js      # Marketing page (also deployed to GitHub Pages)
-│   │       ├── DashboardPage.js    # Account list, monthly summary, inline tx editing
-│   │       ├── ImportPage.js       # 2-step CSV import
-│   │       ├── InboxPage.js        # Unmapped transaction triage
-│   │       ├── ReviewPage.js       # Line chart + yearly/monthly pivot with inline edit
-│   │       ├── RulesPage.js        # Category & rule management
-│   │       ├── InvestmentPage.js   # Portfolio tracker + year-over-year table
-│   │       ├── SettingsPage.js     # Profile + account deletion
-│   │       ├── LoginPage.js
-│   │       ├── RegisterPage.js
-│   │       ├── ForgotPasswordPage.js
-│   │       ├── MagicLinkPage.js
-│   │       └── VerifyEmailPage.js
-│   ├── Dockerfile
-│   ├── Dockerfile.prod      # Multi-stage: React build → nginx
-│   └── package.json
-├── nginx/
-│   ├── nginx.conf           # Dev proxy config
-│   └── nginx.prod.conf      # Production SPA config (serves static + proxies /api/)
-├── .github/workflows/
-│   └── docker-publish.yml   # CI: build → Docker Hub + GitHub Pages on push to master
-├── docker-compose.yml       # Development stack
-├── docker-compose.prod.yml  # Production stack (pulls images from Docker Hub)
-└── .env.example             # Environment variable template
-```
-
----
-
 ## Quick Start (Development)
 
 ### Prerequisites
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
 - Git
 
-### 1. Clone the repo
-
 ```bash
+# 1. Clone
 git clone https://github.com/VictorPiella/smart-budget.git
 cd smart-budget
-```
 
-### 2. (Optional) Create a `.env` file
-
-The dev compose has defaults so `.env` is optional for local development:
-
-```bash
+# 2. (Optional) configure environment — defaults work for local dev
 cp .env.example .env
-# Edit .env with your preferred values
-```
 
-### 3. Start the stack
-
-```bash
+# 3. Start
 docker compose up --build
 ```
 
@@ -124,7 +95,7 @@ docker compose up --build
 | Frontend direct | http://localhost:3001 |
 | Backend API | http://localhost:8000 |
 
-> **Hot-reload:** Both backend (uvicorn `--reload`) and frontend (CRA dev server) support hot-reload.
+> **Hot-reload:** Both backend (uvicorn `--reload`) and frontend (CRA dev server) support hot-reload out of the box.
 
 ---
 
@@ -133,38 +104,40 @@ docker compose up --build
 ### Prerequisites
 - A Linux server with Docker + Docker Compose installed
 - A [Docker Hub](https://hub.docker.com/) account
-- This repo on GitHub with these secrets/variables configured:
+- This repo on GitHub with the following secrets/variables:
 
 | Secret / Variable | Value |
 |-------------------|-------|
 | `DOCKER_USER` | Your Docker Hub username |
 | `DOCKER_TOKEN` | Docker Hub Personal Access Token (Read, Write, Delete) |
-| `PROD_HOST` | Your server's IP or hostname (for SSH deploy) |
+| `PROD_HOST` | Your server's IP or hostname |
 | `PROD_SSH_KEY` | Private SSH key for your server |
 | `DEPLOY_ENABLED` | Repository **variable** set to `true` to enable auto-deploy |
 
 ### CI/CD Flow
 
-Every push to `master` triggers two parallel jobs:
+Every push to `master` triggers three parallel jobs:
 
-1. **Docker Hub** — builds the combined app image (`nginx + uvicorn`) and pushes as `{DOCKER_USER}/smart-budget:latest` + `:{sha}`
-2. **GitHub Pages** — builds the React app with `REACT_APP_GH_PAGES=true` and deploys the landing page to the `gh-pages` branch
-
-If `DEPLOY_ENABLED=true`, a third job SSHs into your server and runs `docker compose pull && up -d`.
+```
+push to master
+├── build-and-push  →  Docker Hub  (smart-budget:latest + :sha)
+├── deploy-pages    →  GitHub Pages (landing page, REACT_APP_GH_PAGES=true)
+└── deploy          →  SSH into server, docker compose pull && up -d  [if DEPLOY_ENABLED=true]
+```
 
 ### Deploy on your server
 
 ```bash
-# 1. Copy files to your server
+# Copy files to your server
 scp docker-compose.prod.yml .env.example user@your-server:~/smartbudget/
 
-# 2. SSH in and configure
+# SSH in and configure
 ssh user@your-server
 cd ~/smartbudget
 cp .env.example .env
 nano .env   # Fill in all values — no defaults in prod!
 
-# 3. Pull and start
+# Pull and start
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
@@ -173,7 +146,6 @@ docker compose -f docker-compose.prod.yml up -d
 
 | Variable | Description |
 |----------|-------------|
-| `DOCKER_USER` | Docker Hub username (to pull images) |
 | `POSTGRES_USER` | Database username |
 | `POSTGRES_PASSWORD` | Database password — use a strong random value |
 | `POSTGRES_DB` | Database name |
@@ -190,13 +162,57 @@ docker compose -f docker-compose.prod.yml up -d
 
 ## GitHub Pages (Landing Page)
 
-The landing page is automatically deployed to GitHub Pages on every push to `master`.
+The landing page is automatically deployed to **[victorpiella.github.io/smart-budget](https://victorpiella.github.io/smart-budget/)** on every push to `master`.
 
-**To activate:**
-1. Go to your repo → **Settings → Pages**
+Built with `REACT_APP_GH_PAGES=true` — login/register links are hidden since there is no backend on GitHub Pages. The CTA becomes a **View on GitHub** link instead.
+
+**To activate on a fork:**
+1. Go to **Settings → Pages**
 2. Source: **Deploy from a branch** → branch `gh-pages` → `/ (root)`
 
-The landing page is built with `REACT_APP_GH_PAGES=true`, which hides the Sign in / Register buttons (they have no backend to connect to on GitHub Pages) and replaces the CTA with a **View on GitHub** link.
+---
+
+## Project Structure
+
+```
+smart-budget/
+├── backend/
+│   ├── app/
+│   │   ├── main.py          # FastAPI routes + startup migrations + mapping engine
+│   │   └── models.py        # SQLAlchemy models
+│   ├── Dockerfile           # Dev image (uvicorn --reload)
+│   └── Dockerfile.prod      # Production image (uvicorn, 2 workers)
+├── frontend/
+│   ├── public/
+│   │   ├── index.html       # SPA entry + GitHub Pages redirect handler
+│   │   └── 404.html         # GitHub Pages deep-link redirect
+│   └── src/
+│       ├── api.js            # Axios instance (baseURL=/api, Bearer token)
+│       ├── context/
+│       │   ├── AccountContext.js   # Global account state
+│       │   └── AuthContext.js      # JWT auth state
+│       ├── components/
+│       │   └── Layout.js    # Top-bar nav, account picker, change-password modal
+│       └── pages/
+│           ├── LandingPage.js      # Marketing page (also deployed to GitHub Pages)
+│           ├── DashboardPage.js    # Account list, monthly summary, inline tx editing
+│           ├── ImportPage.js       # 2-step CSV import
+│           ├── InboxPage.js        # Unmapped transaction triage
+│           ├── ReviewPage.js       # Line chart + yearly/monthly pivot with inline edit
+│           ├── RulesPage.js        # Category & rule management
+│           ├── InvestmentPage.js   # Portfolio tracker + year-over-year table
+│           └── SettingsPage.js     # Profile + account deletion
+├── nginx/
+│   ├── nginx.conf           # Dev proxy config
+│   └── nginx.prod.conf      # Production SPA config
+├── docs/
+│   └── screenshots/         # README screenshots (add your own)
+├── .github/workflows/
+│   └── docker-publish.yml   # CI: Docker Hub + GitHub Pages on push to master
+├── docker-compose.yml        # Development stack
+├── docker-compose.prod.yml   # Production stack
+└── .env.example              # Environment variable template
+```
 
 ---
 
@@ -225,7 +241,7 @@ All endpoints require `Authorization: Bearer <token>` unless noted.
 | `PATCH` | `/api/accounts/{id}` | `{ name?, currency? }` |
 | `DELETE` | `/api/accounts/{id}` | Cascades to all account data |
 
-### Transactions (account-scoped)
+### Transactions
 
 | Method | Path | Notes |
 |--------|------|-------|
@@ -236,13 +252,13 @@ All endpoints require `Authorization: Bearer <token>` unless noted.
 ### Categories & Rules
 
 ```
-GET  / POST          /api/accounts/{id}/categories
-PATCH / DELETE       /api/accounts/{id}/categories/{cat_id}
+GET / POST        /api/accounts/{id}/categories
+PATCH / DELETE    /api/accounts/{id}/categories/{cat_id}
 
-GET  / POST          /api/accounts/{id}/rules
-PATCH / DELETE       /api/accounts/{id}/rules/{rule_id}
+GET / POST        /api/accounts/{id}/rules
+PATCH / DELETE    /api/accounts/{id}/rules/{rule_id}
 
-POST                 /api/accounts/{id}/remap      # Re-run mapping engine on all transactions
+POST              /api/accounts/{id}/remap      # Re-run mapping engine on all transactions
 ```
 
 ### Import
@@ -250,44 +266,37 @@ POST                 /api/accounts/{id}/remap      # Re-run mapping engine on al
 ```
 POST /api/accounts/{id}/import/preview   # Auto-detect columns from CSV
 POST /api/accounts/{id}/import           # Full CSV import (multipart)
-POST /api/accounts/{id}/import/auto      # Bot-friendly JSON import (see below)
+POST /api/accounts/{id}/import/auto      # Bot-friendly JSON import
 ```
 
 ### Review & Investments
 
 ```
-GET  /api/accounts/{id}/summary?year=              # Monthly chart + pivot data
-GET  /api/accounts/{id}/investment-summary?category_ids=  # All-years portfolio data
-PUT  /api/accounts/{id}/investment-snapshots       # Save year-end value / contribution
+GET /api/accounts/{id}/summary?year=                       # Monthly chart + pivot data
+GET /api/accounts/{id}/investment-summary?category_ids=    # All-years portfolio data
+PUT /api/accounts/{id}/investment-snapshots                # Save year-end value / contribution
 ```
 
 ---
 
 ## Bot / Auto-Import API
 
-For external scripts (PDF parsers, bank scrapers, etc.) that push transactions programmatically.
-
-### 1. Get a token
+Push transactions programmatically from PDF parsers, bank scrapers, or any external script.
 
 ```bash
-curl -X POST http://your-server/api/auth/login \
+# 1. Get a token
+curl -X POST https://your-server/api/auth/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=you@example.com&password=yourpassword"
 # → { "access_token": "eyJ..." }
-```
 
-### 2. Find your account ID
-
-```bash
-curl http://your-server/api/accounts \
+# 2. Find your account ID
+curl https://your-server/api/accounts \
   -H "Authorization: Bearer eyJ..."
 # → [{ "id": "uuid", "name": "BBVA", ... }]
-```
 
-### 3. Push transactions
-
-```bash
-curl -X POST http://your-server/api/accounts/{id}/import/auto \
+# 3. Push transactions
+curl -X POST https://your-server/api/accounts/{id}/import/auto \
   -H "Authorization: Bearer eyJ..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -299,36 +308,23 @@ curl -X POST http://your-server/api/accounts/{id}/import/auto \
 # → { "total_rows": 2, "imported": 2, "skipped_duplicates": 0 }
 ```
 
-**Contract:**
-- `date` — ISO `YYYY-MM-DD`
-- `amount` — negative = expense, positive = income
-- Re-sending is safe — duplicates skipped via checksum
-- Mapping rules fire automatically
+**Contract:** `date` = ISO `YYYY-MM-DD` · `amount` negative = expense · re-sending is safe (deduplication via SHA-256 checksum) · mapping rules fire automatically.
 
 ---
 
 ## Architecture Notes
 
-### Database Migrations
-No Alembic. `main.py` runs idempotent `ALTER TABLE … ADD COLUMN IF NOT EXISTS` at every container start. Simple and reliable for a personal project.
+**No migrations framework** — `main.py` runs idempotent `ALTER TABLE … ADD COLUMN IF NOT EXISTS` at every container start.
 
-### Balance Calculation
-`Account.balance` is a stored column but its value is ignored at read time. Balance is always computed as `SUM(transactions.amount)` live — no drift from out-of-band edits.
+**Balance** is always computed as `SUM(transactions.amount)` live — the stored column value is never used.
 
-### Deduplication
-SHA-256 checksum of `date|amount|description` (lowercase, stripped). Checksum is only recomputed on `PATCH` if date/description/amount fields change — category-only patches don't invalidate it.
+**Deduplication** via SHA-256 of `date|amount|description` (lowercase, stripped). Only recomputed on `PATCH` if date/description/amount fields change.
 
-### Manual Assignments
-`PATCH` with `category_id` sets `is_manual = true`. Remap skips these transactions. Reset with `PATCH { "is_manual": false }`.
+**Mapping engine** evaluates rules in descending priority order — first match wins, always case-insensitive.
 
-### Mapping Engine
-Rules evaluated in **descending priority** order — first match wins. Always case-insensitive.
+**`exclude_from_totals`** categories are omitted from the income/expense chart and shown at 50% opacity in the pivot table, but still reflected in the real account balance.
 
-### exclude_from_totals
-Categories marked `exclude_from_totals` (e.g. "Credit card payment") are:
-- Omitted from the income/expense chart
-- Shown at 50% opacity with an amber badge in the pivot table
-- Still reflected in the real account balance
+**`is_manual`** transactions survive remap — manually assigned categories are never overwritten by the rule engine.
 
 ---
 
@@ -339,14 +335,14 @@ Categories marked `exclude_from_totals` (e.g. "Credit card payment") are:
 | Passwords | bcrypt hashing via passlib |
 | Tokens | JWT (HS256), 8 h expiry |
 | Login timing | Dummy bcrypt hash run even when email not found — prevents user enumeration |
-| Rate limiting | slowapi: 5/min on login, 5/min on register, 5/min on magic-link/forgot |
+| Rate limiting | slowapi: 5/min on login, register, magic-link/forgot |
 | Input validation | Pydantic v2 — hex color regex, max-length on names/patterns, currency format |
 | Account deletion | Requires password re-confirmation |
 | CORS | Configurable `ALLOWED_ORIGINS`; credentials allowed only for listed origins |
 | Security headers | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `CSP` via nginx |
 | Email | Verification required before first login; magic-link tokens are single-use with 1 h expiry |
 
-> **Note:** HTTPS is not handled by this repo — configure TLS at your reverse proxy or load balancer (e.g. Let's Encrypt via Certbot or Caddy).
+> HTTPS is not handled by this repo — configure TLS at your reverse proxy (e.g. Let's Encrypt via Certbot or Caddy).
 
 ---
 
