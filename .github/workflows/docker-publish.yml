@@ -65,7 +65,8 @@ jobs:
         env:
           # CI=false prevents CRA from treating ESLint warnings as errors (exit code 1)
           CI: "false"
-          PUBLIC_URL: "."
+          # Must match the GitHub Pages path: https://victorpiella.github.io/<repo-name>
+          PUBLIC_URL: "/smart-budget"
           # Tells the landing page to hide login/register links (no backend on GH Pages)
           REACT_APP_GH_PAGES: "true"
         run: npm run build
