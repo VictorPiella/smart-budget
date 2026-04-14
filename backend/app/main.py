@@ -20,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address  # noqa: F401 (kept for reference)
@@ -147,6 +147,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def _hash_password(plain: str) -> str:
     return pwd_context.hash(plain)
+
+
+# Pre-computed dummy hash used to prevent user-enumeration via login timing.
+# Ensures bcrypt runs even when the email doesn't exist, making response time
+# indistinguishable between "user not found" and "wrong password".
+_DUMMY_HASH = "$2b$12$eImiTXuWVxfM37uY4JANjOe5XcmF5WdcKMEFGpBTBHubJGMB/pGiS"
 
 
 def _verify_password(plain: str, hashed: str) -> bool:
@@ -350,12 +356,12 @@ class VerifyEmailRequest(BaseModel):
     token: str
 
 class AccountCreate(BaseModel):
-    name:     str
-    currency: str = "USD"
+    name:     str = Field(..., min_length=1, max_length=100)
+    currency: str = Field("EUR", pattern=r"^[A-Z]{3}$")
 
 class AccountUpdate(BaseModel):
-    name:     Optional[str] = None
-    currency: Optional[str] = None
+    name:     Optional[str] = Field(None, min_length=1, max_length=100)
+    currency: Optional[str] = Field(None, pattern=r"^[A-Z]{3}$")
 
 class AccountOut(BaseModel):
     id:       uuid.UUID
@@ -365,11 +371,20 @@ class AccountOut(BaseModel):
     class Config:
         from_attributes = True
 
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
 class CategoryCreate(BaseModel):
-    name:                str
+    name:                str  = Field(..., min_length=1, max_length=100)
     color:               str  = "#6366f1"
     is_income:           bool = False
     exclude_from_totals: bool = False
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, v: str) -> str:
+        if not _HEX_COLOR_RE.match(v):
+            raise ValueError("color must be a valid 6-digit hex code (e.g. #6366f1)")
+        return v.lower()
 
 class CategoryOut(BaseModel):
     id:                          uuid.UUID
@@ -383,17 +398,24 @@ class CategoryOut(BaseModel):
         from_attributes = True
 
 class CategoryUpdate(BaseModel):
-    name:                Optional[str]   = None
+    name:                Optional[str]   = Field(None, min_length=1, max_length=100)
     color:               Optional[str]   = None
     is_income:           Optional[bool]  = None
     exclude_from_totals: Optional[bool]  = None
     investment_value:    Optional[float] = None
 
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not _HEX_COLOR_RE.match(v):
+            raise ValueError("color must be a valid 6-digit hex code (e.g. #6366f1)")
+        return v.lower() if v else v
+
 class MappingRuleCreate(BaseModel):
     category_id: uuid.UUID
-    pattern:     str
+    pattern:     str = Field(..., min_length=1, max_length=500)
     match_type:  MatchType
-    priority:    int = 0
+    priority:    int = Field(0, ge=0, le=1000)
 
 class MappingRuleOut(BaseModel):
     id:          uuid.UUID
@@ -406,7 +428,7 @@ class MappingRuleOut(BaseModel):
 
 class MappingRuleUpdate(BaseModel):
     category_id: Optional[uuid.UUID] = None
-    pattern:     Optional[str]       = None
+    pattern:     Optional[str]       = Field(None, min_length=1, max_length=500)
     match_type:  Optional[MatchType] = None
     priority:    Optional[int]       = None
 
@@ -736,14 +758,17 @@ def register(request: Request, payload: UserCreate, db: Session = Depends(get_db
 
 
 @app.post("/auth/login", response_model=Token, tags=["Auth"])
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
 def login(
     request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     db:   Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.email == form.username).first()
-    if not user or not _verify_password(form.password, user.password_hash):
+    # Always run bcrypt (against dummy hash when user not found) to prevent
+    # user-enumeration via timing differences between existing/non-existing emails.
+    password_ok = _verify_password(form.password, user.password_hash if user else _DUMMY_HASH)
+    if not user or not password_ok:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
     if not user.email_verified:
         raise HTTPException(
@@ -833,12 +858,19 @@ def verify_email(
     }
 
 
+class DeleteAccountRequest(BaseModel):
+    password: str
+
 @app.delete("/auth/me", status_code=204, tags=["Auth"])
 def delete_account(
+    payload:      DeleteAccountRequest,
     db:           Session = Depends(get_db),
     current_user: User    = Depends(get_current_user),
 ):
-    """Permanently delete the authenticated user and all their data (GDPR right to erasure)."""
+    """Permanently delete the authenticated user and all their data (GDPR right to erasure).
+    Requires password confirmation to prevent accidental or session-hijack deletions."""
+    if not _verify_password(payload.password, current_user.password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect password.")
     db.delete(current_user)
     db.commit()
 

@@ -77,6 +77,9 @@ function TxRow({ label, cat, catColor, catBg, amount, neg, manual }) {
   );
 }
 
+// When deployed to GitHub Pages there's no backend, so hide auth links.
+const IS_GH_PAGES = process.env.REACT_APP_GH_PAGES === "true";
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 export default function LandingPage() {
   return (
@@ -94,13 +97,15 @@ export default function LandingPage() {
             </div>
             <span className="font-bold text-white tracking-tight">SmartBudget</span>
           </div>
-          <div className="flex items-center gap-3">
-            <Link to="/login" className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-1.5">Sign in</Link>
-            <Link to="/register" className="text-sm text-white font-medium px-4 py-1.5 rounded-lg transition-all hover:-translate-y-px"
-              style={{ background: "linear-gradient(135deg,#22d3ee,#0ea5e9)", boxShadow: "0 0 20px rgba(34,211,238,0.25)" }}>
-              Get started free
-            </Link>
-          </div>
+          {!IS_GH_PAGES && (
+            <div className="flex items-center gap-3">
+              <Link to="/login" className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-1.5">Sign in</Link>
+              <Link to="/register" className="text-sm text-white font-medium px-4 py-1.5 rounded-lg transition-all hover:-translate-y-px"
+                style={{ background: "linear-gradient(135deg,#22d3ee,#0ea5e9)", boxShadow: "0 0 20px rgba(34,211,238,0.25)" }}>
+                Get started free
+              </Link>
+            </div>
+          )}
         </div>
       </nav>
 
@@ -132,19 +137,21 @@ export default function LandingPage() {
             and review monthly spending — all in a private dashboard you host yourself.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link to="/register"
-              className="inline-flex items-center justify-center gap-2 text-white font-semibold px-7 py-3.5 rounded-xl transition-all text-sm hover:-translate-y-0.5"
-              style={{ background: "linear-gradient(135deg,#22d3ee,#0ea5e9)", boxShadow: "0 0 30px rgba(34,211,238,0.3)" }}>
-              Start for free
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
-            </Link>
-            <Link to="/login"
-              className="inline-flex items-center justify-center gap-2 text-zinc-200 font-semibold px-7 py-3.5 rounded-xl transition-all text-sm hover:text-white"
-              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              Sign in
-            </Link>
-          </div>
+          {!IS_GH_PAGES && (
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Link to="/register"
+                className="inline-flex items-center justify-center gap-2 text-white font-semibold px-7 py-3.5 rounded-xl transition-all text-sm hover:-translate-y-0.5"
+                style={{ background: "linear-gradient(135deg,#22d3ee,#0ea5e9)", boxShadow: "0 0 30px rgba(34,211,238,0.3)" }}>
+                Start for free
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
+              </Link>
+              <Link to="/login"
+                className="inline-flex items-center justify-center gap-2 text-zinc-200 font-semibold px-7 py-3.5 rounded-xl transition-all text-sm hover:text-white"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                Sign in
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* ── HERO MOCK-UP ── */}
@@ -723,16 +730,28 @@ export default function LandingPage() {
           <div className="pointer-events-none absolute inset-0 -m-20 rounded-full blur-3xl" style={{ background: "rgba(34,211,238,0.06)" }} />
           <h2 className="relative text-4xl font-extrabold tracking-tight text-white mb-4">Take control of your finances.</h2>
           <p className="relative text-zinc-400 mb-8">Free. Open. Private. Deploy on your own server with Docker in minutes.</p>
-          <Link to="/register"
-            className="inline-flex items-center gap-2 text-white font-semibold px-8 py-3.5 rounded-xl transition-all text-sm hover:-translate-y-0.5"
-            style={{ background: "linear-gradient(135deg,#22d3ee,#0ea5e9)", boxShadow: "0 0 30px rgba(34,211,238,0.25)" }}>
-            Create your free account
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
-          </Link>
-          <p className="text-xs text-zinc-600 mt-4">
-            Already have an account?{" "}
-            <Link to="/login" className="text-zinc-500 hover:text-zinc-300 transition-colors">Sign in</Link>
-          </p>
+          {IS_GH_PAGES ? (
+            <a href="https://github.com/VictorPiella/smart-budget"
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-white font-semibold px-8 py-3.5 rounded-xl transition-all text-sm hover:-translate-y-0.5"
+              style={{ background: "linear-gradient(135deg,#22d3ee,#0ea5e9)", boxShadow: "0 0 30px rgba(34,211,238,0.25)" }}>
+              View on GitHub
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
+            </a>
+          ) : (
+            <>
+              <Link to="/register"
+                className="inline-flex items-center gap-2 text-white font-semibold px-8 py-3.5 rounded-xl transition-all text-sm hover:-translate-y-0.5"
+                style={{ background: "linear-gradient(135deg,#22d3ee,#0ea5e9)", boxShadow: "0 0 30px rgba(34,211,238,0.25)" }}>
+                Create your free account
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
+              </Link>
+              <p className="text-xs text-zinc-600 mt-4">
+                Already have an account?{" "}
+                <Link to="/login" className="text-zinc-500 hover:text-zinc-300 transition-colors">Sign in</Link>
+              </p>
+            </>
+          )}
         </div>
       </section>
 
@@ -750,8 +769,12 @@ export default function LandingPage() {
           </div>
           <div className="flex gap-5">
             <Link to="/privacy-policy" className="hover:text-zinc-400 transition-colors">Privacy Policy</Link>
-            <Link to="/login"          className="hover:text-zinc-400 transition-colors">Sign in</Link>
-            <Link to="/register"       className="hover:text-zinc-400 transition-colors">Register</Link>
+            {!IS_GH_PAGES && <>
+              <Link to="/login"    className="hover:text-zinc-400 transition-colors">Sign in</Link>
+              <Link to="/register" className="hover:text-zinc-400 transition-colors">Register</Link>
+            </>}
+            <a href="https://github.com/VictorPiella/smart-budget" target="_blank" rel="noopener noreferrer"
+              className="hover:text-zinc-400 transition-colors">GitHub</a>
           </div>
           <span>Self-hosted · Your data, your server</span>
         </div>

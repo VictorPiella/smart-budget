@@ -17,6 +17,7 @@ jobs:
       # ── Docker Hub login ────────────────────────────────────────────────────
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
+
         with:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_TOKEN }}
@@ -27,7 +28,7 @@ jobs:
 
       # ── Combined app image (nginx + uvicorn in one container) ───────────────
       - name: Build and push combined app image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.prod
@@ -51,7 +52,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -62,9 +63,11 @@ jobs:
       - name: Build React app
         working-directory: frontend
         env:
-          # Set this to your GitHub Pages URL, e.g. https://youruser.github.io/PersonalBudget
-          # Leave as "." to deploy at the repo root path
+          # CI=false prevents CRA from treating ESLint warnings as errors (exit code 1)
+          CI: "false"
           PUBLIC_URL: "."
+          # Tells the landing page to hide login/register links (no backend on GH Pages)
+          REACT_APP_GH_PAGES: "true"
         run: npm run build
 
       - name: Deploy to gh-pages branch
@@ -77,8 +80,6 @@ jobs:
     name: Deploy to production
     needs: build-and-push
     runs-on: ubuntu-latest
-    # Only deploy when PROD_HOST secret is configured (secrets unavailable in job-level if;
-    # use a repository variable DEPLOY_ENABLED=true to gate this job instead)
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
 
     steps:
