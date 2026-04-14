@@ -32,7 +32,7 @@ function fmtSnapDate(iso, snapshotYear) {
 const THIS_YEAR = new Date().getFullYear();
 
 export default function InvestmentPage() {
-  const { selectedAccount } = useAccounts();
+  const { selectedAccount, loadingAccounts } = useAccounts();
   const currency = selectedAccount?.currency || "EUR";
 
   const [year, setYear]             = useState(new Date().getFullYear());
@@ -269,8 +269,11 @@ export default function InvestmentPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  if (loadingAccounts) {
+    return <div className="text-zinc-500 text-sm py-20 text-center">Loading…</div>;
+  }
   if (!selectedAccount) {
-    return <div className="text-gray-400 text-center py-20">Select an account to view investments.</div>;
+    return <div className="text-zinc-400 text-center py-20">Select an account to view investments.</div>;
   }
 
   return (
@@ -281,27 +284,27 @@ export default function InvestmentPage() {
         <h1 className="text-xl font-semibold">Investment Tracker</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => setYear((y) => y - 1)}
-            className="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm">←</button>
-          <span className="text-gray-200 font-medium w-12 text-center">{year}</span>
+            className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm">←</button>
+          <span className="text-zinc-200 font-medium w-12 text-center">{year}</span>
           <button
             onClick={() => setYear((y) => y + 1)}
             disabled={year >= THIS_YEAR}
             className={`px-2 py-1 rounded text-sm transition-colors ${
               year >= THIS_YEAR
-                ? "bg-gray-800/40 text-gray-700 cursor-not-allowed"
-                : "bg-gray-800 hover:bg-gray-700 text-gray-300"
+                ? "bg-white/[0.03] text-zinc-700 cursor-not-allowed"
+                : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
             }`}
           >→</button>
         </div>
       </div>
 
       {/* ── Category selector ─────────────────────────────────────────── */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-2">
-        <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">
+      <div className="card p-5 p-4 space-y-2">
+        <p className="text-xs text-zinc-500 uppercase tracking-wide font-semibold">
           Select investment categories
         </p>
         {categories.length === 0 ? (
-          <p className="text-gray-500 text-sm">No categories yet — create some in Rules &amp; Categories.</p>
+          <p className="text-zinc-500 text-sm">No categories yet — create some in Rules &amp; Categories.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {categories.map((c) => {
@@ -310,7 +313,7 @@ export default function InvestmentPage() {
                 <button key={c.id} onClick={() => toggleCat(c.id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
                     active ? "border-transparent text-white shadow-md"
-                           : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200"
+                           : "border-white/[0.08] text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
                   }`}
                   style={active ? { backgroundColor: c.color } : {}}
                 >
@@ -325,22 +328,22 @@ export default function InvestmentPage() {
 
       {/* ── Portfolio summary ──────────────────────────────────────────── */}
       {selectedCats.length >= 1 && (
-        <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
-          <h2 className="font-semibold text-gray-200 mb-1">Portfolio Summary</h2>
-          <p className="text-xs text-gray-500 mb-4">
+        <div className="card p-5 p-5">
+          <h2 className="font-semibold text-zinc-200 mb-1">Portfolio Summary</h2>
+          <p className="text-xs text-zinc-500 mb-4">
             Total cash deployed vs. latest recorded value — all-time return on invested capital.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Total invested (cash)</p>
+              <p className="text-xs text-zinc-500 uppercase tracking-wide">Total invested (cash)</p>
               <p className="text-lg font-bold text-white">{fmt(portfolioContributed, currency)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Total current value</p>
+              <p className="text-xs text-zinc-500 uppercase tracking-wide">Total current value</p>
               <p className="text-lg font-bold text-white">{fmt(portfolioCurrent, currency)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Net gain / loss</p>
+              <p className="text-xs text-zinc-500 uppercase tracking-wide">Net gain / loss</p>
               <p className={`text-lg font-bold ${portfolioGain >= 0 ? "text-green-400" : "text-red-400"}`}>
                 {portfolioGain >= 0 ? "+" : ""}
                 {fmt(portfolioGain, currency)}
@@ -356,7 +359,7 @@ export default function InvestmentPage() {
       )}
 
       {selectedCats.length === 0 && (
-        <p className="text-gray-500 text-sm text-center py-8">
+        <p className="text-zinc-500 text-sm text-center py-8">
           Select one or more categories above to see their investment performance.
         </p>
       )}
@@ -399,12 +402,12 @@ export default function InvestmentPage() {
         const contribErrMsg    = saveContribErr[`${cat.id}-${year}`];
 
         return (
-          <div key={cat.id} className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+          <div key={cat.id} className="card p-5 p-5 space-y-4">
 
             {/* Card header */}
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
-              <h2 className="font-semibold text-gray-100">{cat.name}</h2>
+              <h2 className="font-semibold text-zinc-100">{cat.name}</h2>
               {cat.is_income && (
                 <span className="text-xs bg-green-900 text-green-300 rounded px-1.5 py-0.5">Income</span>
               )}
@@ -413,14 +416,14 @@ export default function InvestmentPage() {
             {/* Year stats */}
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-gray-400">Contributed in {year}: </span>
+                <span className="text-zinc-400">Contributed in {year}: </span>
                 <span className="text-white font-medium">{fmt(contributed, currency)}</span>
                 {isManualYear && (
                   <span className="ml-1.5 text-xs text-amber-400 font-normal">(manual)</span>
                 )}
               </div>
               <div>
-                <span className="text-gray-400">Cumulative to {year}: </span>
+                <span className="text-zinc-400">Cumulative to {year}: </span>
                 <span className="text-white font-medium">{fmt(cumulative, currency)}</span>
               </div>
             </div>
@@ -428,12 +431,12 @@ export default function InvestmentPage() {
             {/* Monthly bar chart — only useful if there are actual transactions */}
             {!isManualYear && (
               <div>
-                <p className="text-xs text-gray-500 mb-2 uppercase tracking-wide">
+                <p className="text-xs text-zinc-500 mb-2 uppercase tracking-wide">
                   Monthly contributions — {year}
                 </p>
                 <ResponsiveContainer width="100%" height={130}>
                   <BarChart data={monthData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 11 }}
                       axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} axisLine={false}
@@ -451,22 +454,22 @@ export default function InvestmentPage() {
             )}
 
             {/* Snapshot value + manual contribution inputs */}
-            <div className="border-t border-gray-800 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="border-t border-white/[0.06] pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
 
               {/* Manual contribution input */}
               <div className="space-y-1">
-                <label className="text-xs text-gray-500 uppercase tracking-wide">
+                <label className="text-xs text-zinc-500 uppercase tracking-wide">
                   Contributed in {year}
-                  <span className="ml-1 normal-case text-gray-600">(manual override)</span>
+                  <span className="ml-1 normal-case text-zinc-600">(manual override)</span>
                   {isContribDirty && !isContribSaving && (
                     <span className="ml-2 text-yellow-500 normal-case text-xs">● unsaved</span>
                   )}
                 </label>
                 {(yearRow?.tx_contributed ?? 0) > 0 ? (
                   // Has real transactions — show read-only, input disabled
-                  <div className="w-full bg-gray-800/50 border border-gray-700/50 rounded px-3 py-2 text-sm text-gray-500 cursor-not-allowed flex items-center justify-between">
+                  <div className="w-full bg-zinc-800/50 border border-white/[0.08]/50 rounded px-3 py-2 text-sm text-zinc-500 cursor-not-allowed flex items-center justify-between">
                     <span>{fmt(yearRow.tx_contributed, currency)}</span>
-                    <span className="text-xs text-gray-600">from transactions</span>
+                    <span className="text-xs text-zinc-600">from transactions</span>
                   </div>
                 ) : (
                   <div className="relative">
@@ -479,13 +482,13 @@ export default function InvestmentPage() {
                       onBlur={() => handleContribBlur(cat.id, year)}
                       placeholder="0.00"
                       disabled={isContribSaving}
-                      className={`w-full bg-gray-800 border rounded px-3 py-2 text-sm
+                      className={`w-full bg-zinc-800 border rounded px-3 py-2 text-sm
                         focus:outline-none focus:ring-1 focus:ring-amber-500
                         ${isContribSaving ? "opacity-50 cursor-not-allowed" : ""}
-                        ${contribErrMsg ? "border-red-600" : isContribDirty ? "border-yellow-600/60" : "border-gray-700"}`}
+                        ${contribErrMsg ? "border-red-600" : isContribDirty ? "border-yellow-600/60" : "border-white/[0.08]"}`}
                     />
                     {isContribSaving && (
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs animate-pulse">
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 text-xs animate-pulse">
                         saving…
                       </span>
                     )}
@@ -493,7 +496,7 @@ export default function InvestmentPage() {
                 )}
                 {contribErrMsg && <p className="text-xs text-red-400">{contribErrMsg}</p>}
                 {(yearRow?.tx_contributed ?? 0) === 0 && (
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-zinc-600">
                     {isManualYear ? "Manual — no transactions for this year" : "No transactions — enter the amount manually"}
                   </p>
                 )}
@@ -501,7 +504,7 @@ export default function InvestmentPage() {
 
               {/* Year-end value input */}
               <div className="space-y-1">
-                <label className="text-xs text-gray-500 uppercase tracking-wide">
+                <label className="text-xs text-zinc-500 uppercase tracking-wide">
                   {year === THIS_YEAR ? "Current value" : `Value at end of ${year}`}
                   {isDirty && !isSaving && (
                     <span className="ml-2 text-yellow-500 normal-case text-xs">● unsaved</span>
@@ -517,20 +520,20 @@ export default function InvestmentPage() {
                     onBlur={() => handleValueBlur(cat.id)}
                     placeholder="0.00"
                     disabled={isSaving}
-                    className={`w-full bg-gray-800 border rounded px-3 py-2 text-sm
-                      focus:outline-none focus:ring-1 focus:ring-indigo-500
+                    className={`w-full bg-zinc-800 border rounded px-3 py-2 text-sm
+                      focus:outline-none focus:ring-1 focus:ring-cyan-400
                       ${isSaving ? "opacity-50 cursor-not-allowed" : ""}
-                      ${errMsg ? "border-red-600" : isDirty ? "border-yellow-600/60" : "border-gray-700"}`}
+                      ${errMsg ? "border-red-600" : isDirty ? "border-yellow-600/60" : "border-white/[0.08]"}`}
                   />
                   {isSaving && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs animate-pulse">
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 text-xs animate-pulse">
                       saving…
                     </span>
                   )}
                 </div>
                 {errMsg && <p className="text-xs text-red-400">{errMsg}</p>}
                 {lastUpdatedFmt && !errMsg && (
-                  <p className="text-xs text-gray-600">last saved: {lastUpdatedFmt}</p>
+                  <p className="text-xs text-zinc-600">last saved: {lastUpdatedFmt}</p>
                 )}
               </div>
             </div>
@@ -555,12 +558,12 @@ export default function InvestmentPage() {
 
             {/* ── Year-over-year table ─────────────────────────────────── */}
             {allYears.length > 0 && (
-              <div className="border-t border-gray-800 pt-4">
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">Year-over-Year</p>
+              <div className="border-t border-white/[0.06] pt-4">
+                <p className="text-xs text-zinc-500 uppercase tracking-wide mb-3">Year-over-Year</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm min-w-[720px]">
                     <thead>
-                      <tr className="text-xs text-gray-500 uppercase border-b border-gray-800">
+                      <tr className="text-xs text-zinc-500 uppercase border-b border-white/[0.06]">
                         <th className="text-left pb-2 pr-4">Year</th>
                         <th className="text-right pb-2 pr-4">Contributed</th>
                         <th className="text-right pb-2 pr-4">Cumulative</th>
@@ -591,13 +594,13 @@ export default function InvestmentPage() {
 
                         return (
                           <tr key={row.year}
-                            className={`border-b border-gray-800/50 transition-colors ${
-                              isCurrent ? "bg-indigo-900/20" : "hover:bg-gray-800/30"
+                            className={`border-b border-white/[0.05] transition-colors ${
+                              isCurrent ? "bg-cyan-900/20" : "hover:bg-white/[0.02]"
                             }`}
                           >
-                            <td className={`py-2 pr-4 font-medium ${isCurrent ? "text-indigo-300" : "text-gray-300"}`}>
+                            <td className={`py-2 pr-4 font-medium ${isCurrent ? "text-cyan-300" : "text-zinc-300"}`}>
                               {row.year}
-                              {isCurrent && <span className="ml-1.5 text-xs font-normal text-indigo-400">(current)</span>}
+                              {isCurrent && <span className="ml-1.5 text-xs font-normal text-cyan-400">(current)</span>}
                             </td>
 
                             {/* Contributed — editable for manual override */}
@@ -610,7 +613,7 @@ export default function InvestmentPage() {
                                 </div>
                               ) : row.tx_contributed > 0 ? (
                                 // Has real transactions — show auto value
-                                <span className="text-gray-400">{fmt(row.contributed, currency)}</span>
+                                <span className="text-zinc-400">{fmt(row.contributed, currency)}</span>
                               ) : (
                                 // No transactions, no manual — editable inline
                                 <input
@@ -622,9 +625,9 @@ export default function InvestmentPage() {
                                   onBlur={() => handleContribBlur(cat.id, row.year)}
                                   placeholder="0.00"
                                   disabled={rowSaving}
-                                  className={`w-28 bg-gray-800 border rounded px-2 py-1 text-xs text-right
+                                  className={`w-28 bg-zinc-800 border rounded px-2 py-1 text-xs text-right
                                     focus:outline-none focus:ring-1 focus:ring-amber-500
-                                    ${rowDirty ? "border-yellow-600/60" : "border-gray-700"}
+                                    ${rowDirty ? "border-yellow-600/60" : "border-white/[0.08]"}
                                     ${rowSaving ? "opacity-50" : ""}`}
                                 />
                               )}
@@ -636,23 +639,23 @@ export default function InvestmentPage() {
                             <td className="py-2 pr-4 text-right">
                               {row.snapshot_value != null
                                 ? <span className="text-white">{fmt(row.snapshot_value, currency)}</span>
-                                : <span className="text-gray-600">—</span>}
+                                : <span className="text-zinc-600">—</span>}
                             </td>
                             <td className="py-2 pr-4 text-right">
                               {g != null ? (
                                 <span className={g >= 0 ? "text-green-400" : "text-red-400"}>
                                   {g >= 0 ? "+" : ""}{fmt(g, currency)}
                                 </span>
-                              ) : <span className="text-gray-600">—</span>}
+                              ) : <span className="text-zinc-600">—</span>}
                             </td>
                             <td className="py-2 pr-4 text-right">
                               {gPct != null ? (
                                 <span className={`text-sm font-semibold ${g >= 0 ? "text-green-400" : "text-red-400"}`}>
                                   {g >= 0 ? "+" : ""}{gPct}%
                                 </span>
-                              ) : <span className="text-gray-600">—</span>}
+                              ) : <span className="text-zinc-600">—</span>}
                             </td>
-                            <td className="py-2 text-right text-gray-600 text-xs">
+                            <td className="py-2 text-right text-zinc-600 text-xs">
                               {dateFmt ?? "—"}
                             </td>
                           </tr>
@@ -661,7 +664,7 @@ export default function InvestmentPage() {
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs text-gray-700 mt-2 italic">
+                <p className="text-xs text-zinc-700 mt-2 italic">
                   Annual gain = year-end value − (prior year value + new contributions).
                   First year or years without a prior snapshot use total cumulative as basis.
                   <span className="ml-2 text-amber-700">M = manual contribution override.</span>

@@ -8,6 +8,7 @@ export function AccountProvider({ children }) {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [unmappedCount, setUnmappedCount] = useState(0);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
 
   const setAndPersistAccount = useCallback((account) => {
     if (account) {
@@ -19,17 +20,21 @@ export function AccountProvider({ children }) {
   }, []);
 
   const fetchAccounts = useCallback(async () => {
-    const { data } = await api.get("/accounts");
-    setAccounts(data);
-    if (data.length > 0) {
-      const savedId = localStorage.getItem(STORAGE_KEY);
-      const restored = savedId ? data.find((a) => a.id === savedId) : null;
-      setSelectedAccount((prev) => prev ?? restored ?? data[0]);
+    try {
+      const { data } = await api.get("/accounts");
+      setAccounts(data);
+      if (data.length > 0) {
+        const savedId = localStorage.getItem(STORAGE_KEY);
+        const restored = savedId ? data.find((a) => a.id === savedId) : null;
+        setSelectedAccount((prev) => prev ?? restored ?? data[0]);
+      }
+    } finally {
+      setLoadingAccounts(false);
     }
   }, []);
 
-  // Auto-fetch accounts on mount so any page works after a direct navigation or refresh.
-  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+  // Fetch accounts once on mount (provider is now shared across all routes).
+  useEffect(() => { fetchAccounts(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh the unmapped-transaction badge count for the active account.
   // Call this from any page that changes categorisation state.
@@ -59,6 +64,7 @@ export function AccountProvider({ children }) {
         setAccounts,
         unmappedCount,
         fetchUnmappedCount,
+        loadingAccounts,
       }}
     >
       {children}

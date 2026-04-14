@@ -11,7 +11,7 @@ const THIS_YEAR  = new Date().getFullYear();
 const THIS_MONTH = new Date().getMonth() + 1;
 
 export default function ReviewPage() {
-  const { selectedAccount, fetchUnmappedCount } = useAccounts();
+  const { selectedAccount, fetchUnmappedCount, loadingAccounts } = useAccounts();
 
   // ── Navigation state ────────────────────────────────────────────────────
   const [view,  setView]  = useState("yearly");
@@ -148,11 +148,14 @@ export default function ReviewPage() {
   const pivotRows = summaryData?.pivot ?? [];
 
   // ── Empty state ──────────────────────────────────────────────────────────
+  if (loadingAccounts) {
+    return <div className="text-zinc-500 text-sm py-20 text-center">Loading…</div>;
+  }
   if (!selectedAccount) {
     return (
       <div className="max-w-5xl mx-auto">
         <h1 className="text-2xl font-bold mb-4">Review</h1>
-        <p className="text-gray-500">Select or create an account first.</p>
+        <p className="text-zinc-500">Select or create an account first.</p>
       </div>
     );
   }
@@ -172,7 +175,7 @@ export default function ReviewPage() {
                 key={v}
                 onClick={() => setView(v)}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-colors capitalize ${
-                  view === v ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"
+                  view === v ? "bg-cyan-500 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"
                 }`}
               >
                 {v}
@@ -182,13 +185,13 @@ export default function ReviewPage() {
 
           {/* Year navigation */}
           <div className="flex items-center gap-1">
-            <button onClick={prevYear} className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1.5 rounded text-sm transition-colors">←</button>
-            <span className="bg-gray-800 text-white px-3 py-1.5 rounded text-sm font-mono min-w-[3.5rem] text-center">{year}</span>
+            <button onClick={prevYear} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1.5 rounded text-sm transition-colors">←</button>
+            <span className="bg-zinc-800 text-white px-3 py-1.5 rounded text-sm font-mono min-w-[3.5rem] text-center">{year}</span>
             <button
               onClick={nextYear}
               disabled={!canGoNextYear}
               className={`px-2 py-1.5 rounded text-sm transition-colors ${
-                canGoNextYear ? "bg-gray-800 hover:bg-gray-700 text-gray-300" : "bg-gray-800/40 text-gray-700 cursor-not-allowed"
+                canGoNextYear ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-white/[0.03] text-zinc-700 cursor-not-allowed"
               }`}
             >→</button>
           </div>
@@ -196,13 +199,13 @@ export default function ReviewPage() {
           {/* Month navigation (monthly view only) */}
           {view === "monthly" && (
             <div className="flex items-center gap-1">
-              <button onClick={prevMonth} className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1.5 rounded text-sm transition-colors">←</button>
-              <span className="bg-gray-800 text-white px-3 py-1.5 rounded text-sm min-w-[3rem] text-center">{MONTHS[month - 1]}</span>
+              <button onClick={prevMonth} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1.5 rounded text-sm transition-colors">←</button>
+              <span className="bg-zinc-800 text-white px-3 py-1.5 rounded text-sm min-w-[3rem] text-center">{MONTHS[month - 1]}</span>
               <button
                 onClick={nextMonth}
                 disabled={!canGoNextMonth}
                 className={`px-2 py-1.5 rounded text-sm transition-colors ${
-                  canGoNextMonth ? "bg-gray-800 hover:bg-gray-700 text-gray-300" : "bg-gray-800/40 text-gray-700 cursor-not-allowed"
+                  canGoNextMonth ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-white/[0.03] text-zinc-700 cursor-not-allowed"
                 }`}
               >→</button>
             </div>
@@ -211,14 +214,14 @@ export default function ReviewPage() {
       </div>
 
       {/* ── Income vs Expenses chart (always shown for the selected year) ── */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">
+      <div className="card p-5 p-5">
+        <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide mb-4">
           Income vs Expenses — {year}
-          {summaryLoading && <span className="ml-2 text-gray-600 font-normal normal-case">loading…</span>}
+          {summaryLoading && <span className="ml-2 text-zinc-600 font-normal normal-case">loading…</span>}
         </h2>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={monthlyChartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
             <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 12 }} />
             <YAxis tick={{ fill: "#9ca3af", fontSize: 12 }} />
             <Tooltip contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: 8 }} />
@@ -232,25 +235,25 @@ export default function ReviewPage() {
 
       {/* ── Yearly pivot table ───────────────────────────────────────────── */}
       {view === "yearly" && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 overflow-x-auto">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+        <div className="card p-5 p-5 overflow-x-auto">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide mb-3">
             Category Pivot — {year}
           </h2>
 
           {summaryLoading ? (
-            <p className="text-gray-500 text-sm">Loading…</p>
+            <p className="text-zinc-500 text-sm">Loading…</p>
           ) : pivotRows.length === 0 ? (
-            <p className="text-gray-500 text-sm">No data for {year}.</p>
+            <p className="text-zinc-500 text-sm">No data for {year}.</p>
           ) : (
             <table className="w-full text-sm min-w-max">
               <thead>
-                <tr className="text-gray-400 text-xs uppercase border-b border-gray-800">
+                <tr className="text-zinc-400 text-xs uppercase border-b border-white/[0.06]">
                   <th className="text-left py-2 pr-4">Category</th>
                   {MONTHS.map((m, i) => (
                     <th key={m} className="text-right py-2 px-2">
                       <button
                         onClick={() => jumpToMonth(i)}
-                        className="hover:text-indigo-400 transition-colors"
+                        className="hover:text-cyan-400 transition-colors"
                         title={`View ${m} ${year}`}
                       >
                         {m}
@@ -264,7 +267,7 @@ export default function ReviewPage() {
                 {pivotRows.map((row) => (
                   <tr
                     key={row.category_name}
-                    className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${row.exclude_from_totals ? "opacity-50" : ""}`}
+                    className={`border-b border-white/[0.05] hover:bg-white/[0.02] ${row.exclude_from_totals ? "opacity-50" : ""}`}
                   >
                     <td className="py-2 pr-4 font-medium whitespace-nowrap" style={{ color: row.exclude_from_totals ? "#9ca3af" : row.category_color }}>
                       {row.category_name}
@@ -278,8 +281,8 @@ export default function ReviewPage() {
                         <td
                           key={m}
                           className={`py-2 px-2 text-right font-mono text-xs rounded ${
-                            v !== 0 && !row.exclude_from_totals ? "cursor-pointer hover:bg-gray-700/50" : ""
-                          } ${row.exclude_from_totals ? "text-gray-600" : v < 0 ? "text-red-400" : v > 0 ? "text-green-400" : "text-gray-600"}`}
+                            v !== 0 && !row.exclude_from_totals ? "cursor-pointer hover:bg-white/[0.04]" : ""
+                          } ${row.exclude_from_totals ? "text-zinc-600" : v < 0 ? "text-red-400" : v > 0 ? "text-green-400" : "text-zinc-600"}`}
                           onClick={() => v !== 0 && !row.exclude_from_totals && jumpToMonth(i)}
                           title={v !== 0 && !row.exclude_from_totals ? `View ${MONTHS[i]} ${year}` : undefined}
                         >
@@ -288,7 +291,7 @@ export default function ReviewPage() {
                       );
                     })}
                     <td className={`py-2 pl-4 text-right font-mono font-semibold ${
-                      row.exclude_from_totals ? "text-gray-600" : row.yearly_total < 0 ? "text-red-400" : "text-green-400"
+                      row.exclude_from_totals ? "text-zinc-600" : row.yearly_total < 0 ? "text-red-400" : "text-green-400"
                     }`}>
                       {row.yearly_total.toFixed(2)}
                     </td>
@@ -302,15 +305,15 @@ export default function ReviewPage() {
                   );
                   const total = Math.round(savings.reduce((a, b) => a + b, 0) * 100) / 100;
                   return (
-                    <tr className="border-t-2 border-gray-600 bg-gray-800/40 font-semibold">
-                      <td className="py-2.5 pr-4 text-indigo-300 text-sm tracking-wide">
+                    <tr className="border-t-2 border-zinc-600 bg-white/[0.03] font-semibold">
+                      <td className="py-2.5 pr-4 text-cyan-300 text-sm tracking-wide">
                         Savings
                       </td>
                       {savings.map((v, i) => (
                         <td
                           key={i}
-                          className={`py-2.5 px-2 text-right font-mono text-xs cursor-pointer hover:bg-gray-700/50 rounded ${
-                            v < 0 ? "text-red-400" : v > 0 ? "text-green-400" : "text-gray-600"
+                          className={`py-2.5 px-2 text-right font-mono text-xs cursor-pointer hover:bg-white/[0.04] rounded ${
+                            v < 0 ? "text-red-400" : v > 0 ? "text-green-400" : "text-zinc-600"
                           }`}
                           onClick={() => jumpToMonth(i)}
                           title={`View ${MONTHS[i]} ${year}`}
@@ -334,28 +337,28 @@ export default function ReviewPage() {
 
       {/* ── Monthly transactions table with inline editing + pagination ───── */}
       {view === "monthly" && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div className="card p-5 p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+            <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">
               Transactions — {MONTHS[month - 1]} {year}
             </h2>
             {totalCount > 0 && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-zinc-500">
                 {totalCount} transaction{totalCount !== 1 ? "s" : ""}
               </span>
             )}
           </div>
 
           {loading ? (
-            <p className="text-gray-500 text-sm">Loading…</p>
+            <p className="text-zinc-500 text-sm">Loading…</p>
           ) : transactions.length === 0 ? (
-            <p className="text-gray-500 text-sm">No transactions for this period.</p>
+            <p className="text-zinc-500 text-sm">No transactions for this period.</p>
           ) : (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 text-xs uppercase border-b border-gray-800">
+                    <tr className="text-zinc-400 text-xs uppercase border-b border-white/[0.06]">
                       <th className="text-left py-2 pr-4">Date</th>
                       <th className="text-left py-2 pr-4">Description</th>
                       <th className="text-right py-2 pr-4">Amount</th>
@@ -369,12 +372,12 @@ export default function ReviewPage() {
                       return (
                         <tr
                           key={t.id}
-                          className={`border-b border-gray-800/50 ${
+                          className={`border-b border-white/[0.05] ${
                             isEditing
-                              ? "bg-gray-800/60"
+                              ? "bg-white/[0.04]"
                               : !t.category_id
-                              ? "bg-yellow-900/10 hover:bg-gray-800/30"
-                              : "hover:bg-gray-800/30"
+                              ? "bg-yellow-900/10 hover:bg-white/[0.02]"
+                              : "hover:bg-white/[0.02]"
                           }`}
                         >
                           {isEditing ? (
@@ -384,14 +387,14 @@ export default function ReviewPage() {
                                   type="date"
                                   value={editForm.date}
                                   onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))}
-                                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 w-32"
+                                  className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-32"
                                 />
                               </td>
                               <td className="py-1.5 pr-3">
                                 <input
                                   value={editForm.raw_description}
                                   onChange={(e) => setEditForm((f) => ({ ...f, raw_description: e.target.value }))}
-                                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full min-w-[180px]"
+                                  className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full min-w-[180px]"
                                 />
                               </td>
                               <td className="py-1.5 pr-3 text-right">
@@ -400,14 +403,14 @@ export default function ReviewPage() {
                                   step="0.01"
                                   value={editForm.amount}
                                   onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))}
-                                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 w-28 text-right"
+                                  className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400 w-28 text-right"
                                 />
                               </td>
                               <td className="py-1.5 pr-3">
                                 <select
                                   value={editForm.category_id}
                                   onChange={(e) => setEditForm((f) => ({ ...f, category_id: e.target.value }))}
-                                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                  className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400"
                                 >
                                   <option value="">— unmapped —</option>
                                   {categories.map((c) => (
@@ -419,13 +422,13 @@ export default function ReviewPage() {
                                 <button
                                   onClick={() => handleSaveEdit(t.id)}
                                   disabled={editSaving}
-                                  className="text-indigo-400 hover:text-indigo-300 text-xs mr-2 disabled:opacity-50"
+                                  className="text-cyan-400 hover:text-cyan-300 text-xs mr-2 disabled:opacity-50"
                                 >
                                   Save
                                 </button>
                                 <button
                                   onClick={() => setEditingId(null)}
-                                  className="text-gray-500 hover:text-gray-300 text-xs mr-2"
+                                  className="text-zinc-500 hover:text-zinc-300 text-xs mr-2"
                                 >
                                   Cancel
                                 </button>
@@ -440,7 +443,7 @@ export default function ReviewPage() {
                             </>
                           ) : (
                             <>
-                              <td className="py-2 pr-4 text-gray-400 whitespace-nowrap">{t.date}</td>
+                              <td className="py-2 pr-4 text-zinc-400 whitespace-nowrap">{t.date}</td>
                               <td className="py-2 pr-4 max-w-xs truncate">{t.raw_description}</td>
                               <td className={`py-2 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}>
                                 {parseFloat(t.amount).toFixed(2)}
@@ -457,14 +460,14 @@ export default function ReviewPage() {
                                         {cat.name}
                                       </span>
                                     ) : (
-                                      <span className="bg-indigo-900/50 text-indigo-300 text-xs px-2 py-0.5 rounded">mapped</span>
+                                      <span className="bg-violet-900/50 text-cyan-300 text-xs px-2 py-0.5 rounded">mapped</span>
                                     );
                                   })() : (
                                     <span className="bg-yellow-900/50 text-yellow-300 text-xs px-2 py-0.5 rounded">unmapped</span>
                                   )}
                                   {t.is_manual && (
                                     <span
-                                      className="text-xs text-gray-500 bg-gray-800 border border-gray-700 px-1 py-0.5 rounded"
+                                      className="text-xs text-zinc-500 bg-white/[0.04] border border-white/[0.07] px-1 py-0.5 rounded"
                                       title="Manually assigned"
                                     >
                                       M
@@ -475,7 +478,7 @@ export default function ReviewPage() {
                               <td className="py-2 text-right">
                                 <button
                                   onClick={() => startEdit(t)}
-                                  className="text-gray-600 hover:text-indigo-400 text-xs transition-colors"
+                                  className="text-zinc-600 hover:text-cyan-400 text-xs transition-colors"
                                 >
                                   ✎
                                 </button>
@@ -491,21 +494,21 @@ export default function ReviewPage() {
 
               {/* Pagination controls */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-3 mt-4 pt-4 border-t border-gray-800">
+                <div className="flex items-center justify-center gap-3 mt-4 pt-4 border-t border-white/[0.06]">
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page === 1}
-                    className="bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-gray-300 px-3 py-1.5 rounded text-sm transition-colors"
+                    className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-300 px-3 py-1.5 rounded text-sm transition-colors"
                   >
                     ← Prev
                   </button>
-                  <span className="text-sm text-gray-400">
+                  <span className="text-sm text-zinc-400">
                     Page {page} of {totalPages}
                   </span>
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
-                    className="bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-gray-300 px-3 py-1.5 rounded text-sm transition-colors"
+                    className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-300 px-3 py-1.5 rounded text-sm transition-colors"
                   >
                     Next →
                   </button>

@@ -34,14 +34,14 @@ export default function VerifyEmailPage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950">
-      <div className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl p-8 text-center space-y-4">
-        <h1 className="text-2xl font-bold text-indigo-400">SmartBudget</h1>
+    <div className="min-h-screen flex items-center justify-center bg-surface-0">
+      <div className="w-full max-w-sm card p-5 p-8 text-center space-y-4">
+        <h1 className="text-2xl font-bold text-cyan-400">SmartBudget</h1>
 
         {status === "verifying" && (
           <>
             <div className="text-3xl animate-pulse">📧</div>
-            <p className="text-gray-400 text-sm">Verifying your email…</p>
+            <p className="text-zinc-400 text-sm">Verifying your email…</p>
           </>
         )}
 
@@ -49,7 +49,7 @@ export default function VerifyEmailPage() {
           <>
             <div className="text-3xl">✅</div>
             <p className="text-green-400 font-semibold">Email verified! Welcome aboard.</p>
-            <p className="text-gray-500 text-sm">Redirecting to your dashboard…</p>
+            <p className="text-zinc-500 text-sm">Redirecting to your dashboard…</p>
           </>
         )}
 
@@ -57,14 +57,14 @@ export default function VerifyEmailPage() {
           <>
             <div className="text-3xl">❌</div>
             <p className="text-red-400 font-semibold">Verification failed</p>
-            <p className="text-sm text-gray-400">{errorMsg}</p>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-sm text-zinc-400">{errorMsg}</p>
+            <p className="text-xs text-zinc-500 mt-2">
               Need a new link?{" "}
-              <Link to="/register" className="text-indigo-400 hover:underline">
+              <Link to="/register" className="text-cyan-400 hover:underline">
                 Register again
               </Link>{" "}
               or{" "}
-              <Link to="/login" className="text-indigo-400 hover:underline">
+              <Link to="/login" className="text-cyan-400 hover:underline">
                 sign in
               </Link>
               .

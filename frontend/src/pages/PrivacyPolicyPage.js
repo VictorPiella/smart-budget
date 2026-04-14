@@ -3,18 +3,18 @@ import { Link } from "react-router-dom";
 
 const Section = ({ title, children }) => (
   <div className="space-y-2">
-    <h2 className="text-base font-semibold text-gray-200">{title}</h2>
-    <div className="text-sm text-gray-400 space-y-2">{children}</div>
+    <h2 className="text-base font-semibold text-zinc-200">{title}</h2>
+    <div className="text-sm text-zinc-400 space-y-2">{children}</div>
   </div>
 );
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="min-h-screen bg-gray-950 py-12 px-4">
+    <div className="min-h-screen bg-surface-0 py-12 px-4">
       <div className="max-w-2xl mx-auto space-y-8">
         <div>
-          <h1 className="text-2xl font-bold text-indigo-400">SmartBudget — Privacy Policy</h1>
-          <p className="text-xs text-gray-500 mt-1">Last updated: March 2026</p>
+          <h1 className="text-2xl font-bold text-cyan-400">SmartBudget — Privacy Policy</h1>
+          <p className="text-xs text-zinc-500 mt-1">Last updated: March 2026</p>
         </div>
 
         <Section title="1. Who we are">
@@ -28,10 +28,10 @@ export default function PrivacyPolicyPage() {
         <Section title="2. Data we collect">
           <p>When you create an account we collect:</p>
           <ul className="list-disc pl-5 space-y-1">
-            <li>Your <strong className="text-gray-300">email address</strong> — for authentication and account recovery.</li>
-            <li>A <strong className="text-gray-300">bcrypt-hashed password</strong> — your plain-text password is never stored.</li>
-            <li><strong className="text-gray-300">Financial transactions</strong> you import or enter manually — dates, descriptions, and amounts.</li>
-            <li>Any <strong className="text-gray-300">categories, mapping rules, and investment data</strong> you create.</li>
+            <li>Your <strong className="text-zinc-300">email address</strong> — for authentication and account recovery.</li>
+            <li>A <strong className="text-zinc-300">bcrypt-hashed password</strong> — your plain-text password is never stored.</li>
+            <li><strong className="text-zinc-300">Financial transactions</strong> you import or enter manually — dates, descriptions, and amounts.</li>
+            <li>Any <strong className="text-zinc-300">categories, mapping rules, and investment data</strong> you create.</li>
           </ul>
           <p>We do not collect your name, phone number, location, or any payment information.</p>
         </Section>
@@ -43,7 +43,7 @@ export default function PrivacyPolicyPage() {
             <li>Displaying and analysing your financial transactions.</li>
             <li>Sending account-related emails (verification links, password-reset links).</li>
           </ul>
-          <p>We do <strong className="text-gray-300">not</strong> sell, share, or transfer your data to any third party for marketing or analytics purposes.</p>
+          <p>We do <strong className="text-zinc-300">not</strong> sell, share, or transfer your data to any third party for marketing or analytics purposes.</p>
         </Section>
 
         <Section title="4. Data storage and security">
@@ -58,10 +58,10 @@ export default function PrivacyPolicyPage() {
         <Section title="5. Your rights (GDPR)">
           <p>As a data subject under GDPR you have the right to:</p>
           <ul className="list-disc pl-5 space-y-1">
-            <li><strong className="text-gray-300">Access</strong> — request a copy of your data via Settings → Export.</li>
-            <li><strong className="text-gray-300">Erasure</strong> — permanently delete your account and all associated data via Settings → Delete my account.</li>
-            <li><strong className="text-gray-300">Rectification</strong> — edit or correct any transaction or account data directly in the app.</li>
-            <li><strong className="text-gray-300">Portability</strong> — download all your data as a JSON file at any time via Settings → Export.</li>
+            <li><strong className="text-zinc-300">Access</strong> — request a copy of your data via Settings → Export.</li>
+            <li><strong className="text-zinc-300">Erasure</strong> — permanently delete your account and all associated data via Settings → Delete my account.</li>
+            <li><strong className="text-zinc-300">Rectification</strong> — edit or correct any transaction or account data directly in the app.</li>
+            <li><strong className="text-zinc-300">Portability</strong> — download all your data as a JSON file at any time via Settings → Export.</li>
           </ul>
         </Section>
 
@@ -86,8 +86,8 @@ export default function PrivacyPolicyPage() {
           </p>
         </Section>
 
-        <div className="pt-4 border-t border-gray-800">
-          <Link to="/login" className="text-indigo-400 hover:underline text-sm">
+        <div className="pt-4 border-t border-white/[0.06]">
+          <Link to="/login" className="text-cyan-400 hover:underline text-sm">
             ← Back to sign in
           </Link>
         </div>

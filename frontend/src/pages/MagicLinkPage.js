@@ -35,14 +35,14 @@ export default function MagicLinkPage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950">
-      <div className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl p-8 text-center space-y-4">
-        <h1 className="text-2xl font-bold text-indigo-400">SmartBudget</h1>
+    <div className="min-h-screen flex items-center justify-center bg-surface-0">
+      <div className="w-full max-w-sm card p-5 p-8 text-center space-y-4">
+        <h1 className="text-2xl font-bold text-cyan-400">SmartBudget</h1>
 
         {status === "verifying" && (
           <>
             <div className="text-3xl animate-pulse">🔐</div>
-            <p className="text-gray-400 text-sm">Verifying your link…</p>
+            <p className="text-zinc-400 text-sm">Verifying your link…</p>
           </>
         )}
 
@@ -57,16 +57,16 @@ export default function MagicLinkPage() {
           <>
             <div className="text-3xl">❌</div>
             <p className="text-red-400 font-semibold">Link expired or invalid</p>
-            <p className="text-sm text-gray-400">{errorMsg}</p>
+            <p className="text-sm text-zinc-400">{errorMsg}</p>
             <Link
               to="/forgot-password"
-              className="inline-block mt-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
+              className="inline-block mt-2 bg-cyan-500 hover:bg-cyan-400 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
             >
               Request a new link
             </Link>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-zinc-500 mt-2">
               Or{" "}
-              <Link to="/login" className="text-indigo-400 hover:underline">
+              <Link to="/login" className="text-cyan-400 hover:underline">
                 sign in with your password
               </Link>
             </p>

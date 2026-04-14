@@ -3,7 +3,7 @@ import api, { apiError } from "../api";
 import { useAccounts } from "../context/AccountContext";
 
 export default function InboxPage() {
-  const { accounts, selectedAccount, fetchUnmappedCount } = useAccounts();
+  const { accounts, selectedAccount, fetchUnmappedCount, loadingAccounts } = useAccounts();
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -155,11 +155,14 @@ export default function InboxPage() {
 
   const catMap = Object.fromEntries(categories.map((c) => [c.id, c.name]));
 
+  if (loadingAccounts) {
+    return <div className="text-zinc-500 text-sm py-20 text-center">Loading…</div>;
+  }
   if (!selectedAccount) {
     return (
       <div className="max-w-5xl mx-auto">
         <h1 className="text-2xl font-bold mb-4">Unmapped Inbox</h1>
-        <p className="text-gray-500">Select or create an account first.</p>
+        <p className="text-zinc-500">Select or create an account first.</p>
       </div>
     );
   }
@@ -184,29 +187,29 @@ export default function InboxPage() {
         </div>
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div className="card p-5 p-5">
         {loading ? (
-          <p className="text-gray-500 text-sm">Loading...</p>
+          <p className="text-zinc-500 text-sm">Loading...</p>
         ) : transactions.length === 0 ? (
           <div className="text-center py-10">
             <p className="text-green-400 font-semibold text-lg">All caught up!</p>
-            <p className="text-gray-500 text-sm mt-1">No unmapped transactions for {selectedAccount.name}.</p>
+            <p className="text-zinc-500 text-sm mt-1">No unmapped transactions for {selectedAccount.name}.</p>
           </div>
         ) : (
           <>
-            <p className="text-gray-400 text-sm mb-4">
+            <p className="text-zinc-400 text-sm mb-4">
               <strong className="text-white">Assign</strong> a category directly, or <strong className="text-white">Create Rule</strong> to also categorize all future matching transactions.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-gray-400 text-xs uppercase border-b border-gray-800">
+                  <tr className="text-zinc-400 text-xs uppercase border-b border-white/[0.06]">
                     <th className="py-2 pr-3 w-8">
                       <input
                         type="checkbox"
                         checked={allSelected}
                         onChange={toggleAll}
-                        className="accent-indigo-500 cursor-pointer"
+                        className="accent-cyan-400 cursor-pointer"
                         title={allSelected ? "Deselect all" : "Select all"}
                       />
                     </th>
@@ -222,19 +225,19 @@ export default function InboxPage() {
                   {transactions.map((t) => (
                     <tr
                       key={t.id}
-                      className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${selected.has(t.id) ? "bg-gray-800/20" : ""}`}
+                      className={`border-b border-white/[0.05] hover:bg-white/[0.02] ${selected.has(t.id) ? "bg-white/[0.02]" : ""}`}
                     >
                       <td className="py-2 pr-3">
                         <input
                           type="checkbox"
                           checked={selected.has(t.id)}
                           onChange={() => toggleOne(t.id)}
-                          className="accent-indigo-500 cursor-pointer"
+                          className="accent-cyan-400 cursor-pointer"
                         />
                       </td>
-                      <td className="py-2 pr-4 text-gray-400 whitespace-nowrap">{t.date}</td>
+                      <td className="py-2 pr-4 text-zinc-400 whitespace-nowrap">{t.date}</td>
                       <td className="py-2 pr-4 max-w-sm">
-                        <span className="font-mono text-xs bg-gray-800 px-2 py-0.5 rounded text-gray-200">
+                        <span className="font-mono text-xs bg-zinc-800 px-2 py-0.5 rounded text-zinc-200">
                           {t.raw_description}
                         </span>
                       </td>
@@ -246,7 +249,7 @@ export default function InboxPage() {
                           defaultValue=""
                           disabled={categories.length === 0 || assigning[t.id]}
                           onChange={(e) => handleAssignCategory(t.id, e.target.value)}
-                          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                          className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 disabled:opacity-50"
                         >
                           <option value="" disabled>— assign —</option>
                           {categories.map((c) => (
@@ -258,7 +261,7 @@ export default function InboxPage() {
                         <button
                           onClick={() => openEdit(t)}
                           title="Edit transaction"
-                          className="text-gray-500 hover:text-indigo-400 transition-colors px-1"
+                          className="text-zinc-500 hover:text-cyan-400 transition-colors px-1"
                         >
                           ✎
                         </button>
@@ -267,7 +270,7 @@ export default function InboxPage() {
                         <button
                           onClick={() => openModal(t)}
                           disabled={categories.length === 0}
-                          className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs px-3 py-1 rounded transition-colors whitespace-nowrap"
+                          className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-white text-xs px-3 py-1 rounded transition-colors whitespace-nowrap"
                         >
                           Create Rule
                         </button>
@@ -286,37 +289,37 @@ export default function InboxPage() {
 
       {editModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm p-6 space-y-4">
+          <div className="card p-5 w-full max-w-sm p-6 space-y-4">
             <h2 className="text-lg font-semibold">Edit Transaction</h2>
             <form onSubmit={handleSaveEdit} className="space-y-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Date</label>
+                <label className="text-xs text-zinc-400">Date</label>
                 <input
                   type="date"
                   value={editForm.date}
                   onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))}
                   required
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Description</label>
+                <label className="text-xs text-zinc-400">Description</label>
                 <input
                   value={editForm.raw_description}
                   onChange={(e) => setEditForm((f) => ({ ...f, raw_description: e.target.value }))}
                   required
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Amount <span className="text-gray-500">(negative = expense, positive = income)</span></label>
+                <label className="text-xs text-zinc-400">Amount <span className="text-zinc-500">(negative = expense, positive = income)</span></label>
                 <input
                   type="number"
                   step="0.01"
                   value={editForm.amount}
                   onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))}
                   required
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
               {editError && <p className="text-red-400 text-xs">{editError}</p>}
@@ -324,14 +327,14 @@ export default function InboxPage() {
                 <button
                   type="submit"
                   disabled={editSaving}
-                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded transition-colors"
+                  className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-white text-sm px-4 py-2 rounded transition-colors"
                 >
                   {editSaving ? "Saving…" : "Save"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setEditModal(null)}
-                  className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded transition-colors"
+                  className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded transition-colors"
                 >
                   Cancel
                 </button>
@@ -343,18 +346,18 @@ export default function InboxPage() {
 
       {ruleModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 space-y-4">
+          <div className="card p-5 w-full max-w-md p-6 space-y-4">
             <h2 className="text-lg font-semibold">Create Mapping Rule</h2>
-            <p className="text-xs text-gray-400 font-mono bg-gray-800 px-3 py-2 rounded break-all">
+            <p className="text-xs text-zinc-400 font-mono bg-zinc-800 px-3 py-2 rounded break-all">
               {ruleModal.raw_description}
             </p>
             <form onSubmit={handleCreateRule} className="space-y-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Category</label>
+                <label className="text-xs text-zinc-400">Category</label>
                 <select
                   value={ruleForm.category_id}
                   onChange={(e) => setRuleForm((f) => ({ ...f, category_id: e.target.value }))}
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 >
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
@@ -362,11 +365,11 @@ export default function InboxPage() {
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Match Type</label>
+                <label className="text-xs text-zinc-400">Match Type</label>
                 <select
                   value={ruleForm.match_type}
                   onChange={(e) => setRuleForm((f) => ({ ...f, match_type: e.target.value }))}
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 >
                   <option value="exact">Exact</option>
                   <option value="starts_with">Starts With</option>
@@ -374,21 +377,21 @@ export default function InboxPage() {
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Pattern</label>
+                <label className="text-xs text-zinc-400">Pattern</label>
                 <input
                   value={ruleForm.pattern}
                   onChange={(e) => setRuleForm((f) => ({ ...f, pattern: e.target.value }))}
                   required
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Priority</label>
+                <label className="text-xs text-zinc-400">Priority</label>
                 <input
                   type="number"
                   value={ruleForm.priority}
                   onChange={(e) => setRuleForm((f) => ({ ...f, priority: e.target.value }))}
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 w-24"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400 w-24"
                 />
               </div>
               {ruleError && <p className="text-red-400 text-xs">{ruleError}</p>}
@@ -396,14 +399,14 @@ export default function InboxPage() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded transition-colors"
+                  className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-white text-sm px-4 py-2 rounded transition-colors"
                 >
                   {saving ? "Saving..." : "Save & Remap"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setRuleModal(null)}
-                  className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded transition-colors"
+                  className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded transition-colors"
                 >
                   Cancel
                 </button>

@@ -15,9 +15,12 @@
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.38"
   },
+  "homepage": ".",
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build"
+    "build": "react-scripts build",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build"
   },
   "eslintConfig": {
     "extends": ["react-app"]

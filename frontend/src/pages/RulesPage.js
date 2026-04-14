@@ -141,14 +141,14 @@ export default function RulesPage() {
       <h1 className="text-2xl font-bold">Rules & Categories</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Categories</h2>
+        <div className="card p-5 p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">Categories</h2>
           {categories.length === 0 && (
-            <p className="text-gray-500 text-sm">No categories yet.</p>
+            <p className="text-zinc-500 text-sm">No categories yet.</p>
           )}
           <ul className="space-y-1.5">
             {categories.map((c) => (
-              <li key={c.id} className="bg-gray-800 rounded px-3 py-2">
+              <li key={c.id} className="bg-zinc-800 rounded px-3 py-2">
                 {editingCat?.id === c.id ? (
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-2">
@@ -161,12 +161,12 @@ export default function RulesPage() {
                       <input
                         value={editingCat.name}
                         onChange={(e) => setEditingCat({ ...editingCat, name: e.target.value })}
-                        className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        className="flex-1 bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
                       />
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex flex-col gap-1">
-                        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                        <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={editingCat.is_income}
@@ -175,7 +175,7 @@ export default function RulesPage() {
                           />
                           Income category
                         </label>
-                        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                        <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={editingCat.exclude_from_totals}
@@ -188,13 +188,13 @@ export default function RulesPage() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleUpdateCat(editingCat)}
-                          className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
+                          className="text-cyan-400 hover:text-cyan-300 text-xs transition-colors"
                         >
                           Save
                         </button>
                         <button
                           onClick={() => setEditingCat(null)}
-                          className="text-gray-500 hover:text-gray-300 text-xs transition-colors"
+                          className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
                         >
                           Cancel
                         </button>
@@ -219,13 +219,13 @@ export default function RulesPage() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setEditingCat({ ...c })}
-                        className="text-gray-600 hover:text-indigo-400 text-xs transition-colors"
+                        className="text-zinc-600 hover:text-cyan-400 text-xs transition-colors"
                       >
                         ✎
                       </button>
                       <button
                         onClick={() => handleDeleteCategory(c.id)}
-                        className="text-gray-600 hover:text-red-400 text-xs transition-colors"
+                        className="text-zinc-600 hover:text-red-400 text-xs transition-colors"
                       >
                         ✕
                       </button>
@@ -250,16 +250,16 @@ export default function RulesPage() {
                 onChange={(e) => setNewCatName(e.target.value)}
                 placeholder="Category name"
                 required
-                className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="flex-1 bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
               />
               <button
                 type="submit"
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded transition-colors"
+                className="bg-cyan-500 hover:bg-cyan-400 text-white text-sm px-3 py-1.5 rounded transition-colors"
               >
                 Add
               </button>
             </div>
-            <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+            <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
               <input
                 type="checkbox"
                 checked={newCatIsIncome}
@@ -268,7 +268,7 @@ export default function RulesPage() {
               />
               Income category
             </label>
-            <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+            <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
               <input
                 type="checkbox"
                 checked={newCatExclude}
@@ -280,18 +280,18 @@ export default function RulesPage() {
           </form>
         </div>
 
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">New Mapping Rule</h2>
+        <div className="card p-5 p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">New Mapping Rule</h2>
           {categories.length === 0 ? (
             <p className="text-yellow-400 text-sm">Create a category first.</p>
           ) : (
             <form onSubmit={handleAddRule} className="space-y-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Category</label>
+                <label className="text-xs text-zinc-400">Category</label>
                 <select
                   value={ruleForm.category_id}
                   onChange={(e) => setRuleForm((f) => ({ ...f, category_id: e.target.value }))}
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 >
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
@@ -299,11 +299,11 @@ export default function RulesPage() {
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Match Type</label>
+                <label className="text-xs text-zinc-400">Match Type</label>
                 <select
                   value={ruleForm.match_type}
                   onChange={(e) => setRuleForm((f) => ({ ...f, match_type: e.target.value }))}
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 >
                   <option value="exact">Exact</option>
                   <option value="starts_with">Starts With</option>
@@ -311,28 +311,28 @@ export default function RulesPage() {
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Pattern</label>
+                <label className="text-xs text-zinc-400">Pattern</label>
                 <input
                   value={ruleForm.pattern}
                   onChange={(e) => setRuleForm((f) => ({ ...f, pattern: e.target.value }))}
                   placeholder="e.g. Netflix, AMZN, Grocery"
                   required
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Priority (higher = evaluated first)</label>
+                <label className="text-xs text-zinc-400">Priority (higher = evaluated first)</label>
                 <input
                   type="number"
                   value={ruleForm.priority}
                   onChange={(e) => setRuleForm((f) => ({ ...f, priority: e.target.value }))}
-                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 w-24"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400 w-24"
                 />
               </div>
               {ruleError && <p className="text-red-400 text-xs">{ruleError}</p>}
               <button
                 type="submit"
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded transition-colors"
+                className="bg-cyan-500 hover:bg-cyan-400 text-white text-sm px-4 py-2 rounded transition-colors"
               >
                 Create Rule
               </button>
@@ -341,12 +341,12 @@ export default function RulesPage() {
         </div>
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+      <div className="card p-5 p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">
           Active Rules ({rules.length})
         </h2>
         {rules.length === 0 ? (
-          <p className="text-gray-500 text-sm">No rules yet. Rules auto-categorize transactions on import.</p>
+          <p className="text-zinc-500 text-sm">No rules yet. Rules auto-categorize transactions on import.</p>
         ) : (
           <div className="space-y-4">
             {[...rulesByCategory, ...(uncategorisedRules.length > 0 ? [{ cat: null, rules: uncategorisedRules }] : [])].map(({ cat, rules: catRules }) => (
@@ -359,13 +359,13 @@ export default function RulesPage() {
                       <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: cat.color }}>{cat.name}</span>
                     </>
                   ) : (
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Unknown Category</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Unknown Category</span>
                   )}
-                  <span className="text-xs text-gray-600">({catRules.length})</span>
+                  <span className="text-xs text-zinc-600">({catRules.length})</span>
                 </div>
 
                 {/* Rules table for this category */}
-                <div className="rounded border border-gray-800 overflow-hidden">
+                <div className="rounded border border-white/[0.06] overflow-hidden">
                   <table className="w-full text-sm table-fixed">
                     <colgroup>
                       <col className="w-28" />
@@ -374,7 +374,7 @@ export default function RulesPage() {
                       <col className="w-20" />
                     </colgroup>
                     <thead>
-                      <tr className="bg-gray-800/60 text-gray-500 text-xs uppercase">
+                      <tr className="bg-white/[0.04] text-zinc-500 text-xs uppercase">
                         <th className="text-left px-3 py-1.5">Match Type</th>
                         <th className="text-left px-3 py-1.5">Pattern</th>
                         <th className="text-right px-3 py-1.5">Priority</th>
@@ -384,12 +384,12 @@ export default function RulesPage() {
                     <tbody>
                       {catRules.map((r) => (
                         editingRuleId === r.id ? (
-                          <tr key={r.id} className="border-t border-gray-800 bg-gray-800/40">
+                          <tr key={r.id} className="border-t border-white/[0.06] bg-white/[0.03]">
                             <td className="px-3 py-2">
                               <select
                                 value={editRuleForm.match_type}
                                 onChange={(e) => setEditRuleForm((f) => ({ ...f, match_type: e.target.value }))}
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400"
                               >
                                 <option value="exact">Exact</option>
                                 <option value="starts_with">Starts With</option>
@@ -400,7 +400,7 @@ export default function RulesPage() {
                               <input
                                 value={editRuleForm.pattern}
                                 onChange={(e) => setEditRuleForm((f) => ({ ...f, pattern: e.target.value }))}
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs font-mono w-full focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs font-mono w-full focus:outline-none focus:ring-1 focus:ring-cyan-400"
                               />
                             </td>
                             <td className="px-3 py-2 text-right">
@@ -408,7 +408,7 @@ export default function RulesPage() {
                                 type="number"
                                 value={editRuleForm.priority}
                                 onChange={(e) => setEditRuleForm((f) => ({ ...f, priority: e.target.value }))}
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-cyan-400"
                               />
                             </td>
                             <td className="px-3 py-2 text-right">
@@ -416,13 +416,13 @@ export default function RulesPage() {
                                 <button
                                   onClick={() => handleSaveRule(r.id)}
                                   disabled={editRuleSaving}
-                                  className="text-indigo-400 hover:text-indigo-300 text-xs disabled:opacity-50 transition-colors"
+                                  className="text-cyan-400 hover:text-cyan-300 text-xs disabled:opacity-50 transition-colors"
                                 >
                                   {editRuleSaving ? "…" : "Save"}
                                 </button>
                                 <button
                                   onClick={() => { setEditingRuleId(null); setEditRuleError(""); }}
-                                  className="text-gray-500 hover:text-gray-300 text-xs transition-colors"
+                                  className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
                                 >
                                   Cancel
                                 </button>
@@ -431,22 +431,22 @@ export default function RulesPage() {
                             </td>
                           </tr>
                         ) : (
-                          <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-800/30">
-                            <td className="px-3 py-2 text-gray-400 capitalize text-xs">{r.match_type.replace("_", " ")}</td>
+                          <tr key={r.id} className="border-t border-white/[0.06] hover:bg-white/[0.02]">
+                            <td className="px-3 py-2 text-zinc-400 capitalize text-xs">{r.match_type.replace("_", " ")}</td>
                             <td className="px-3 py-2 font-mono text-yellow-300 text-xs truncate">{r.pattern}</td>
-                            <td className="px-3 py-2 text-right text-gray-500 text-xs">{r.priority}</td>
+                            <td className="px-3 py-2 text-right text-zinc-500 text-xs">{r.priority}</td>
                             <td className="px-3 py-2 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button
                                   onClick={() => startEditRule(r)}
-                                  className="text-gray-600 hover:text-indigo-400 text-xs transition-colors"
+                                  className="text-zinc-600 hover:text-cyan-400 text-xs transition-colors"
                                   title="Edit rule"
                                 >
                                   ✎
                                 </button>
                                 <button
                                   onClick={() => handleDeleteRule(r.id)}
-                                  className="text-gray-600 hover:text-red-400 text-xs transition-colors"
+                                  className="text-zinc-600 hover:text-red-400 text-xs transition-colors"
                                   title="Delete rule"
                                 >
                                   ✕

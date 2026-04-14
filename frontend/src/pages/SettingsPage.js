@@ -82,15 +82,15 @@ export default function SettingsPage() {
 
       {/* ── Backup & Restore ──────────────────────────────────────────────── */}
       <section className="space-y-6">
-        <h2 className="text-lg font-semibold text-gray-200 border-b border-gray-800 pb-2">
+        <h2 className="text-lg font-semibold text-zinc-200 border-b border-white/[0.06] pb-2">
           Backup &amp; Restore
         </h2>
 
         {/* Export */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+        <div className="card p-5 p-5 space-y-3">
           <div>
-            <h3 className="font-medium text-gray-100">Export all data</h3>
-            <p className="text-sm text-gray-400 mt-1">
+            <h3 className="font-medium text-zinc-100">Export all data</h3>
+            <p className="text-sm text-zinc-400 mt-1">
               Downloads a complete JSON backup of all your accounts, categories, transactions,
               mapping rules, and investment snapshots. Safe to re-import — duplicates are skipped.
             </p>
@@ -101,17 +101,17 @@ export default function SettingsPage() {
           <button
             onClick={handleExport}
             disabled={exporting}
-            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
+            className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
           >
             {exporting ? "Preparing download…" : "⬇ Download Backup JSON"}
           </button>
         </div>
 
         {/* Import */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+        <div className="card p-5 p-5 space-y-4">
           <div>
-            <h3 className="font-medium text-gray-100">Restore from backup</h3>
-            <p className="text-sm text-gray-400 mt-1">
+            <h3 className="font-medium text-zinc-100">Restore from backup</h3>
+            <p className="text-sm text-zinc-400 mt-1">
               Upload a previously exported backup file. Data is merged — existing transactions
               are never overwritten, and duplicate records are safely skipped.
             </p>
@@ -125,7 +125,7 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs text-gray-400 uppercase tracking-wide block">
+            <label className="text-xs text-zinc-400 uppercase tracking-wide block">
               Backup file (.json)
             </label>
             <input
@@ -137,9 +137,9 @@ export default function SettingsPage() {
                 setImportResult(null);
                 setImportError("");
               }}
-              className="block w-full text-sm text-gray-400
+              className="block w-full text-sm text-zinc-400
                 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0
-                file:bg-gray-700 file:text-white file:text-sm hover:file:bg-gray-600 cursor-pointer"
+                file:bg-zinc-700 file:text-white file:text-sm hover:file:bg-zinc-600 cursor-pointer"
             />
           </div>
 
@@ -157,7 +157,7 @@ export default function SettingsPage() {
 
           {/* Result summary */}
           {importResult && (
-            <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-2">
+            <div className="bg-white/[0.04] border border-white/[0.07] rounded-lg p-4 space-y-2">
               <p className="text-sm font-semibold text-green-400">✓ Import complete</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                 {[
@@ -168,8 +168,8 @@ export default function SettingsPage() {
                   { label: "Rules created",          value: importResult.rules_created },
                   { label: "Snapshots upserted",     value: importResult.snapshots_upserted },
                 ].map(({ label, value }) => (
-                  <div key={label} className="bg-gray-900 rounded px-3 py-2">
-                    <p className="text-gray-500">{label}</p>
+                  <div key={label} className="bg-zinc-900 rounded px-3 py-2">
+                    <p className="text-zinc-500">{label}</p>
                     <p className="text-white font-semibold text-sm">{value}</p>
                   </div>
                 ))}
@@ -184,17 +184,17 @@ export default function SettingsPage() {
         <h2 className="text-lg font-semibold text-red-400 border-b border-red-900/40 pb-2">
           Danger Zone
         </h2>
-        <div className="bg-gray-900 border border-red-900/50 rounded-xl p-5 space-y-4">
+        <div className="bg-zinc-900 border border-red-900/50 rounded-xl p-5 space-y-4">
           <div>
-            <h3 className="font-medium text-gray-100">Delete my account</h3>
-            <p className="text-sm text-gray-400 mt-1">
+            <h3 className="font-medium text-zinc-100">Delete my account</h3>
+            <p className="text-sm text-zinc-400 mt-1">
               Permanently deletes your account and <strong className="text-white">all data</strong> —
               accounts, transactions, categories, rules, and investment snapshots.
               This cannot be undone.
             </p>
           </div>
           <div className="space-y-2">
-            <label className="text-xs text-gray-400 uppercase tracking-wide block">
+            <label className="text-xs text-zinc-400 uppercase tracking-wide block">
               Type <span className="text-red-400 font-mono">DELETE</span> to confirm
             </label>
             <input
@@ -202,7 +202,7 @@ export default function SettingsPage() {
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}
               placeholder="DELETE"
-              className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm w-full focus:outline-none focus:ring-1 focus:ring-red-500"
+              className="bg-white/[0.04] border border-white/[0.07] rounded px-3 py-2 text-sm w-full focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </div>
           {deleteError && <p className="text-red-400 text-sm">{deleteError}</p>}

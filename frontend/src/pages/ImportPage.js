@@ -5,11 +5,11 @@ import { useAccounts } from "../context/AccountContext";
 // Shared result card used by CSV import and Manual Entry
 function ImportResult({ result, onReset, resetLabel = "Import another file" }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Import Result</h2>
+    <div className="card p-5 p-5 space-y-3">
+      <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">Import Result</h2>
       <div className="grid grid-cols-3 gap-3 text-center">
-        <div className="bg-gray-800 rounded-lg p-3">
-          <p className="text-xs text-gray-400 mb-1">Total Rows</p>
+        <div className="bg-zinc-800 rounded-lg p-3">
+          <p className="text-xs text-zinc-400 mb-1">Total Rows</p>
           <p className="text-xl font-bold">{result.total_rows}</p>
         </div>
         <div className="bg-green-900/30 border border-green-800 rounded-lg p-3">
@@ -26,7 +26,7 @@ function ImportResult({ result, onReset, resetLabel = "Import another file" }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-gray-400 text-xs uppercase border-b border-gray-800">
+              <tr className="text-zinc-400 text-xs uppercase border-b border-white/[0.06]">
                 <th className="text-left py-2 pr-4">Date</th>
                 <th className="text-left py-2 pr-4">Description</th>
                 <th className="text-right py-2 pr-4">Amount</th>
@@ -35,15 +35,15 @@ function ImportResult({ result, onReset, resetLabel = "Import another file" }) {
             </thead>
             <tbody>
               {result.transactions.map((t) => (
-                <tr key={t.id} className="border-b border-gray-800/50">
-                  <td className="py-1.5 pr-4 text-gray-400">{t.date}</td>
+                <tr key={t.id} className="border-b border-white/[0.05]">
+                  <td className="py-1.5 pr-4 text-zinc-400">{t.date}</td>
                   <td className="py-1.5 pr-4 max-w-xs truncate">{t.raw_description}</td>
                   <td className={`py-1.5 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}>
                     {parseFloat(t.amount).toFixed(2)}
                   </td>
                   <td className="py-1.5">
                     {t.category_id
-                      ? <span className="bg-indigo-900/50 text-indigo-300 text-xs px-2 py-0.5 rounded">mapped</span>
+                      ? <span className="bg-violet-900/50 text-cyan-300 text-xs px-2 py-0.5 rounded">mapped</span>
                       : <span className="bg-yellow-900/50 text-yellow-300 text-xs px-2 py-0.5 rounded">unmapped</span>
                     }
                   </td>
@@ -56,7 +56,7 @@ function ImportResult({ result, onReset, resetLabel = "Import another file" }) {
 
       <button
         onClick={onReset}
-        className="text-sm text-gray-400 hover:text-white transition-colors"
+        className="text-sm text-zinc-400 hover:text-white transition-colors"
       >
         {resetLabel}
       </button>
@@ -213,13 +213,13 @@ export default function ImportPage() {
       <h1 className="text-2xl font-bold">Smart Import</h1>
 
       {/* ── Account selector (always visible) ───────────────────────────── */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+      <div className="card p-5 p-5 space-y-4">
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-400 uppercase tracking-wide">Target Account</label>
+          <label className="text-xs text-zinc-400 uppercase tracking-wide">Target Account</label>
           <select
             value={selectedAccount?.id || ""}
             onChange={(e) => setSelectedAccount(accounts.find((a) => a.id === e.target.value) || null)}
-            className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="bg-white/[0.04] border border-white/[0.07] rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
           >
             {accounts.length === 0 && <option value="">No accounts — create one first</option>}
             {accounts.map((a) => (
@@ -236,8 +236,8 @@ export default function ImportPage() {
               onClick={() => setMode(t.id)}
               className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
                 mode === t.id
-                  ? "bg-indigo-600 text-white"
-                  : "bg-gray-800 text-gray-400 hover:text-white"
+                  ? "bg-cyan-500 text-white"
+                  : "bg-zinc-800 text-zinc-400 hover:text-white"
               }`}
             >
               {t.label}
@@ -249,31 +249,31 @@ export default function ImportPage() {
         {(mode === "file" || mode === "paste") && !result && (
           <form onSubmit={handlePreview} className="space-y-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-indigo-400 bg-indigo-900/40 rounded-full w-5 h-5 flex items-center justify-center">1</span>
-              <span className="text-sm font-semibold text-gray-300">Upload or paste your bank export</span>
+              <span className="text-xs font-bold text-cyan-400 bg-cyan-900/30 rounded-full w-5 h-5 flex items-center justify-center">1</span>
+              <span className="text-sm font-semibold text-zinc-300">Upload or paste your bank export</span>
             </div>
 
             {mode === "file" ? (
               <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">CSV File</label>
+                <label className="text-xs text-zinc-400 uppercase tracking-wide block mb-1">CSV File</label>
                 <input
                   type="file"
                   accept=".csv,.tsv,text/csv,text/plain"
                   onChange={(e) => { setFile(e.target.files[0]); setPreview(null); setResult(null); }}
                   required
-                  className="block w-full text-sm text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-indigo-700 file:text-white file:text-sm hover:file:bg-indigo-600 cursor-pointer"
+                  className="block w-full text-sm text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-violet-700 file:text-white file:text-sm hover:file:bg-cyan-500 cursor-pointer"
                 />
               </div>
             ) : (
               <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Paste Bank Data</label>
+                <label className="text-xs text-zinc-400 uppercase tracking-wide block mb-1">Paste Bank Data</label>
                 <textarea
                   value={rawCsv}
                   onChange={(e) => { setRawCsv(e.target.value); setPreview(null); setResult(null); }}
                   rows={8}
                   placeholder={"Paste directly from your bank export.\nTab, comma, and semicolon separators are all supported."}
                   required
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-y"
+                  className="w-full bg-white/[0.04] border border-white/[0.07] rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400 resize-y"
                 />
               </div>
             )}
@@ -287,7 +287,7 @@ export default function ImportPage() {
             <button
               type="submit"
               disabled={previewing || !selectedAccount}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
+              className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
             >
               {previewing ? "Analysing..." : "Analyse File →"}
             </button>
@@ -298,39 +298,39 @@ export default function ImportPage() {
         {mode === "manual" && !manualResult && (
           <form onSubmit={handleManualSubmit} className="space-y-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-indigo-400 bg-indigo-900/40 rounded-full w-5 h-5 flex items-center justify-center">✏</span>
-              <span className="text-sm font-semibold text-gray-300">Enter transaction details</span>
+              <span className="text-xs font-bold text-cyan-400 bg-cyan-900/30 rounded-full w-5 h-5 flex items-center justify-center">✏</span>
+              <span className="text-sm font-semibold text-zinc-300">Enter transaction details</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400 uppercase tracking-wide">Date</label>
+                <label className="text-xs text-zinc-400 uppercase tracking-wide">Date</label>
                 <input
                   type="date"
                   value={manualForm.date}
                   onChange={(e) => setManualForm((f) => ({ ...f, date: e.target.value }))}
                   required
-                  className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
 
               <div className="flex flex-col gap-1 sm:col-span-2">
-                <label className="text-xs text-gray-400 uppercase tracking-wide">Description</label>
+                <label className="text-xs text-zinc-400 uppercase tracking-wide">Description</label>
                 <input
                   type="text"
                   value={manualForm.description}
                   onChange={(e) => setManualForm((f) => ({ ...f, description: e.target.value }))}
                   placeholder="e.g. Amazon Prime, Salary…"
                   required
-                  className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="bg-white/[0.04] border border-white/[0.07] rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
             </div>
 
             <div className="flex flex-col gap-1 max-w-xs">
-              <label className="text-xs text-gray-400 uppercase tracking-wide">
+              <label className="text-xs text-zinc-400 uppercase tracking-wide">
                 Amount
-                <span className="ml-1 text-gray-600 normal-case">(negative = expense, positive = income)</span>
+                <span className="ml-1 text-zinc-600 normal-case">(negative = expense, positive = income)</span>
               </label>
               <input
                 type="number"
@@ -339,11 +339,11 @@ export default function ImportPage() {
                 onChange={(e) => setManualForm((f) => ({ ...f, amount: e.target.value }))}
                 placeholder="-50.00"
                 required
-                className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="bg-white/[0.04] border border-white/[0.07] rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
               />
             </div>
 
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-zinc-500">
               Mapping rules will be applied automatically — category assigned by matching rules (same as CSV import).
             </p>
 
@@ -356,7 +356,7 @@ export default function ImportPage() {
             <button
               type="submit"
               disabled={manualSubmitting || !selectedAccount}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
+              className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
             >
               {manualSubmitting ? "Adding…" : "Add Transaction"}
             </button>
@@ -366,11 +366,11 @@ export default function ImportPage() {
 
       {/* ── CSV Step 2: column mapper ────────────────────────────────────── */}
       {preview && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+        <div className="card p-5 p-5 space-y-4">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-indigo-400 bg-indigo-900/40 rounded-full w-5 h-5 flex items-center justify-center">2</span>
-            <span className="text-sm font-semibold text-gray-300">Map columns</span>
-            <span className="text-xs text-gray-500 ml-1">— {preview.headers.length} columns detected</span>
+            <span className="text-xs font-bold text-cyan-400 bg-cyan-900/30 rounded-full w-5 h-5 flex items-center justify-center">2</span>
+            <span className="text-sm font-semibold text-zinc-300">Map columns</span>
+            <span className="text-xs text-zinc-500 ml-1">— {preview.headers.length} columns detected</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -380,12 +380,12 @@ export default function ImportPage() {
               { key: "amount", label: "Amount column" },
             ].map(({ key, label }) => (
               <div key={key} className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">{label}</label>
+                <label className="text-xs text-zinc-400">{label}</label>
                 <select
                   value={mapping[key]}
                   onChange={(e) => setMapping((m) => ({ ...m, [key]: e.target.value }))}
-                  className={`bg-gray-800 border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
-                    mapping[key] ? "border-gray-700" : "border-yellow-600"
+                  className={`bg-zinc-800 border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                    mapping[key] ? "border-white/[0.08]" : "border-yellow-600"
                   }`}
                 >
                   <option value="">— select —</option>
@@ -398,7 +398,7 @@ export default function ImportPage() {
           </div>
 
           <div>
-            <p className="text-xs text-gray-400 mb-2">Extra columns to merge into description (optional)</p>
+            <p className="text-xs text-zinc-400 mb-2">Extra columns to merge into description (optional)</p>
             <div className="flex flex-wrap gap-2">
               {preview.headers
                 .filter((h) => h !== mapping.date && h !== mapping.amount)
@@ -409,8 +409,8 @@ export default function ImportPage() {
                     onClick={() => toggleExtra(h)}
                     className={`text-xs px-2.5 py-1 rounded border transition-colors ${
                       mapping.extra.includes(h)
-                        ? "bg-indigo-700 border-indigo-500 text-white"
-                        : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500"
+                        ? "bg-violet-700 border-cyan-500 text-white"
+                        : "bg-zinc-800 border-white/[0.08] text-zinc-400 hover:border-zinc-500"
                     }`}
                   >
                     {h}
@@ -420,26 +420,26 @@ export default function ImportPage() {
           </div>
 
           <div>
-            <p className="text-xs text-gray-400 mb-2">Sample rows ({preview.sample_rows.length})</p>
-            <div className="overflow-x-auto rounded border border-gray-800">
+            <p className="text-xs text-zinc-400 mb-2">Sample rows ({preview.sample_rows.length})</p>
+            <div className="overflow-x-auto rounded border border-white/[0.06]">
               <table className="w-full text-xs min-w-max">
                 <thead>
-                  <tr className="bg-gray-800">
+                  <tr className="bg-zinc-800">
                     {preview.headers.map((h) => (
                       <th
                         key={h}
                         className={`text-left px-3 py-2 font-medium whitespace-nowrap ${
                           [mapping.date, mapping.desc, mapping.amount].includes(h)
-                            ? "text-indigo-300"
+                            ? "text-cyan-300"
                             : mapping.extra.includes(h)
                             ? "text-yellow-300"
-                            : "text-gray-500"
+                            : "text-zinc-500"
                         }`}
                       >
                         {h}
-                        {mapping.date === h   && <span className="ml-1 text-indigo-400">(date)</span>}
-                        {mapping.desc === h   && <span className="ml-1 text-indigo-400">(desc)</span>}
-                        {mapping.amount === h && <span className="ml-1 text-indigo-400">(amount)</span>}
+                        {mapping.date === h   && <span className="ml-1 text-cyan-400">(date)</span>}
+                        {mapping.desc === h   && <span className="ml-1 text-cyan-400">(desc)</span>}
+                        {mapping.amount === h && <span className="ml-1 text-cyan-400">(amount)</span>}
                         {mapping.extra.includes(h) && <span className="ml-1 text-yellow-400">(+desc)</span>}
                       </th>
                     ))}
@@ -447,7 +447,7 @@ export default function ImportPage() {
                 </thead>
                 <tbody>
                   {preview.sample_rows.map((row, i) => (
-                    <tr key={i} className="border-t border-gray-800 hover:bg-gray-800/40">
+                    <tr key={i} className="border-t border-white/[0.06] hover:bg-white/[0.03]">
                       {preview.headers.map((h) => (
                         <td
                           key={h}
@@ -456,7 +456,7 @@ export default function ImportPage() {
                               ? "text-white"
                               : mapping.extra.includes(h)
                               ? "text-yellow-200"
-                              : "text-gray-500"
+                              : "text-zinc-500"
                           }`}
                         >
                           {row[h] ?? ""}
@@ -485,7 +485,7 @@ export default function ImportPage() {
             </button>
             <button
               onClick={() => { setPreview(null); setError(""); }}
-              className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded transition-colors"
+              className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded transition-colors"
             >
               Back
             </button>
@@ -493,7 +493,7 @@ export default function ImportPage() {
               type="button"
               onClick={handleRemap}
               disabled={remapping || !selectedAccount}
-              className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm px-4 py-2 rounded transition-colors ml-auto"
+              className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm px-4 py-2 rounded transition-colors ml-auto"
             >
               {remapping ? "Remapping..." : "Re-run Rules"}
             </button>
@@ -504,13 +504,13 @@ export default function ImportPage() {
       {/* ── Import confirmation modal ─────────────────────────────────────── */}
       {showConfirm && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm p-6 space-y-4">
+          <div className="card p-5 w-full max-w-sm p-6 space-y-4">
             <h2 className="text-lg font-semibold">Confirm Import</h2>
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-zinc-300">
               Import transactions into{" "}
-              <span className="text-indigo-300 font-semibold">{selectedAccount?.name}</span>?
+              <span className="text-cyan-300 font-semibold">{selectedAccount?.name}</span>?
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-zinc-500">
               All rows will be parsed and imported. Duplicates are automatically skipped.
               Mapping rules will fire on every new transaction.
             </p>
@@ -524,7 +524,7 @@ export default function ImportPage() {
               </button>
               <button
                 onClick={() => setShowConfirm(false)}
-                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 rounded transition-colors"
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white text-sm py-2 rounded transition-colors"
               >
                 Cancel
               </button>

@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { AccountProvider } from "./context/AccountContext";
 import Layout from "./components/Layout";
@@ -18,36 +18,52 @@ import InboxPage from "./pages/InboxPage";
 import InvestmentPage from "./pages/InvestmentPage";
 import SettingsPage from "./pages/SettingsPage";
 
-function ProtectedRoute({ children }) {
+/**
+ * Single protected shell — AccountProvider and Layout are mounted ONCE and
+ * persist across all page navigations, so selectedAccount is never reset.
+ */
+function ProtectedShell() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-500">Loading...</div>;
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center text-zinc-500">
+      Loading…
+    </div>
+  );
   if (!user) return <Navigate to="/landing" replace />;
   return (
     <AccountProvider>
-      <Layout>{children}</Layout>
+      <Layout>
+        <Outlet />
+      </Layout>
     </AccountProvider>
   );
 }
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={process.env.PUBLIC_URL || ""}>
       <AuthProvider>
         <Routes>
-          <Route path="/landing" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/magic-link" element={<MagicLinkPage />} />
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          {/* Public routes */}
+          <Route path="/landing"        element={<LandingPage />} />
+          <Route path="/login"          element={<LoginPage />} />
+          <Route path="/register"       element={<RegisterPage />} />
+          <Route path="/forgot-password"element={<ForgotPasswordPage />} />
+          <Route path="/magic-link"     element={<MagicLinkPage />} />
+          <Route path="/verify-email"   element={<VerifyEmailPage />} />
           <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-          <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-          <Route path="/import" element={<ProtectedRoute><ImportPage /></ProtectedRoute>} />
-          <Route path="/rules" element={<ProtectedRoute><RulesPage /></ProtectedRoute>} />
-          <Route path="/review" element={<ProtectedRoute><ReviewPage /></ProtectedRoute>} />
-          <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
-          <Route path="/investment" element={<ProtectedRoute><InvestmentPage /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+
+          {/* Protected routes — single AccountProvider for all */}
+          <Route element={<ProtectedShell />}>
+            <Route path="/"           element={<DashboardPage />} />
+            <Route path="/import"     element={<ImportPage />} />
+            <Route path="/rules"      element={<RulesPage />} />
+            <Route path="/review"     element={<ReviewPage />} />
+            <Route path="/inbox"      element={<InboxPage />} />
+            <Route path="/investment" element={<InvestmentPage />} />
+            <Route path="/settings"   element={<SettingsPage />} />
+          </Route>
+
           <Route path="*" element={<Navigate to="/landing" replace />} />
         </Routes>
       </AuthProvider>
