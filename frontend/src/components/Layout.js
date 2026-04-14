@@ -25,7 +25,7 @@ const IC = {
 };
 
 const NAV = [
-  { to: "/",           label: "Dashboard",         icon: "home"     },
+  { to: "/dashboard",  label: "Dashboard",         icon: "home"     },
   { to: "/import",     label: "Import",             icon: "import"   },
   { to: "/rules",      label: "Rules",              icon: "tag"      },
   { to: "/review",     label: "Review",             icon: "bar"      },
@@ -107,7 +107,7 @@ export default function Layout({ children }) {
         {/* Nav */}
         <nav className="flex items-center gap-0.5 flex-1 overflow-x-auto">
           {NAV.map(n => (
-            <NavLink key={n.to} to={n.to} end={n.to === "/"}
+            <NavLink key={n.to} to={n.to} end={n.to === "/dashboard"}
               className={({ isActive }) => [
                 "relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-all duration-100 select-none whitespace-nowrap",
                 isActive

@@ -19,6 +19,22 @@ import InvestmentPage from "./pages/InvestmentPage";
 import SettingsPage from "./pages/SettingsPage";
 
 /**
+ * Root route: shows LandingPage for guests, redirects to /dashboard for
+ * authenticated users. This means GitHub Pages can serve index.html at /
+ * and immediately show the landing page — no redirect, no 404.html needed.
+ */
+function PublicRoot() {
+  const { user, loading } = useAuth();
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center text-zinc-500">
+      Loading…
+    </div>
+  );
+  if (user) return <Navigate to="/dashboard" replace />;
+  return <LandingPage />;
+}
+
+/**
  * Single protected shell — AccountProvider and Layout are mounted ONCE and
  * persist across all page navigations, so selectedAccount is never reset.
  */
@@ -29,7 +45,7 @@ function ProtectedShell() {
       Loading…
     </div>
   );
-  if (!user) return <Navigate to="/landing" replace />;
+  if (!user) return <Navigate to="/login" replace />;
   return (
     <AccountProvider>
       <Layout>
@@ -44,8 +60,11 @@ export default function App() {
     <BrowserRouter basename={process.env.PUBLIC_URL || ""}>
       <AuthProvider>
         <Routes>
+          {/* Root — LandingPage for guests, /dashboard redirect for logged-in users */}
+          <Route path="/"               element={<PublicRoot />} />
+
           {/* Public routes */}
-          <Route path="/landing"        element={<LandingPage />} />
+          <Route path="/landing"        element={<Navigate to="/" replace />} />
           <Route path="/login"          element={<LoginPage />} />
           <Route path="/register"       element={<RegisterPage />} />
           <Route path="/forgot-password"element={<ForgotPasswordPage />} />
@@ -55,7 +74,7 @@ export default function App() {
 
           {/* Protected routes — single AccountProvider for all */}
           <Route element={<ProtectedShell />}>
-            <Route path="/"           element={<DashboardPage />} />
+            <Route path="/dashboard"  element={<DashboardPage />} />
             <Route path="/import"     element={<ImportPage />} />
             <Route path="/rules"      element={<RulesPage />} />
             <Route path="/review"     element={<ReviewPage />} />
@@ -64,7 +83,7 @@ export default function App() {
             <Route path="/settings"   element={<SettingsPage />} />
           </Route>
 
-          <Route path="*" element={<Navigate to="/landing" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
