@@ -8,18 +8,18 @@ export default function SettingsPage() {
   const { logout } = useAuth();
 
   // ── Delete account ────────────────────────────────────────────────────────
-  const [deleteConfirm, setDeleteConfirm] = useState("");
-  const [deleting, setDeleting]           = useState(false);
-  const [deleteError, setDeleteError]     = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleting, setDeleting]             = useState(false);
+  const [deleteError, setDeleteError]       = useState("");
 
   const handleDeleteAccount = async () => {
     setDeleting(true);
     setDeleteError("");
     try {
-      await api.delete("/auth/me");
+      await api.delete("/auth/me", { data: { password: deletePassword } });
       logout();
     } catch {
-      setDeleteError("Failed to delete account. Please try again.");
+      setDeleteError("Incorrect password or failed to delete account.");
       setDeleting(false);
     }
   };
@@ -195,20 +195,20 @@ export default function SettingsPage() {
           </div>
           <div className="space-y-2">
             <label className="text-xs text-zinc-400 uppercase tracking-wide block">
-              Type <span className="text-red-400 font-mono">DELETE</span> to confirm
+              Enter your password to confirm
             </label>
             <input
-              type="text"
-              value={deleteConfirm}
-              onChange={(e) => setDeleteConfirm(e.target.value)}
-              placeholder="DELETE"
+              type="password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              placeholder="Your password"
               className="bg-white/[0.04] border border-white/[0.07] rounded px-3 py-2 text-sm w-full focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </div>
           {deleteError && <p className="text-red-400 text-sm">{deleteError}</p>}
           <button
             onClick={handleDeleteAccount}
-            disabled={deleteConfirm !== "DELETE" || deleting}
+            disabled={!deletePassword || deleting}
             className="bg-red-700 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded transition-colors"
           >
             {deleting ? "Deleting…" : "Permanently delete my account"}
