@@ -56,8 +56,15 @@ function ProtectedShell() {
 }
 
 export default function App() {
+  // PUBLIC_URL is "/" or a subpath like "/smart-budget" for GH Pages.
+  // When homepage is "." in package.json the build sets PUBLIC_URL="." which
+  // is NOT a valid Router basename — React Router normalises "." → "/." and
+  // renders nothing.  Only use it as basename when it actually starts with "/".
+  const basename = (process.env.PUBLIC_URL || "").startsWith("/")
+    ? process.env.PUBLIC_URL
+    : "";
   return (
-    <BrowserRouter basename={process.env.PUBLIC_URL || ""}>
+    <BrowserRouter basename={basename}>
       <AuthProvider>
         <Routes>
           {/* Root — LandingPage for guests, /dashboard redirect for logged-in users */}
