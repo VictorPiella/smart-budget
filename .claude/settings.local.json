@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(curl -s -v -X POST http://localhost/api/auth/login -H \"Content-Type: application/x-www-form-urlencoded\" -H \"Origin: http://localhost\" -d \"username=test@test.com&password=Test1234\")",
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git commit --amend -m 'fix: BrowserRouter blank page when PUBLIC_URL is dot *)"
     ]
   }
 }
