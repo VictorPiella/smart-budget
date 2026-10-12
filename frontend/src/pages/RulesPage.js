@@ -368,74 +368,124 @@ export default function RulesPage() {
                 <div className="rounded border border-white/[0.06] overflow-hidden">
                   <table className="w-full text-sm table-fixed">
                     <colgroup>
-                      <col className="w-28" />
+                      <col className="w-[5.5rem] sm:w-32" />
                       <col />
-                      <col className="w-16" />
-                      <col className="w-20" />
+                      <col className="w-12 sm:w-20" />
+                      <col className="w-14 sm:w-16" />
                     </colgroup>
                     <thead>
                       <tr className="bg-white/[0.04] text-zinc-500 text-xs uppercase">
-                        <th className="text-left px-3 py-1.5">Match Type</th>
-                        <th className="text-left px-3 py-1.5">Pattern</th>
-                        <th className="text-right px-3 py-1.5">Priority</th>
+                        <th className="text-left px-2 sm:px-3 py-1.5">Match<span className="hidden sm:inline"> Type</span></th>
+                        <th className="text-left px-2 sm:px-3 py-1.5">Pattern</th>
+                        <th className="text-right px-2 sm:px-3 py-1.5"><span className="sm:hidden">Prio</span><span className="hidden sm:inline">Priority</span></th>
                         <th className="px-3 py-1.5"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {catRules.map((r) => (
                         editingRuleId === r.id ? (
-                          <tr key={r.id} className="border-t border-white/[0.06] bg-white/[0.03]">
-                            <td className="px-3 py-2">
+                          <React.Fragment key={r.id}>
+                          <tr className="border-t border-white/[0.06] bg-white/[0.03]">
+                            {/* Mobile: stacked editor */}
+                            <td colSpan={4} className="sm:hidden px-2 py-3">
+                              <div className="space-y-2">
+                                <input
+                                  value={editRuleForm.pattern}
+                                  onChange={(e) => setEditRuleForm((f) => ({ ...f, pattern: e.target.value }))}
+                                  placeholder="Pattern"
+                                  className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                                />
+                                <div className="grid grid-cols-[1fr_6rem] gap-2">
+                                  <select
+                                    value={editRuleForm.match_type}
+                                    onChange={(e) => setEditRuleForm((f) => ({ ...f, match_type: e.target.value }))}
+                                    className="bg-zinc-800 border border-zinc-600 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                                  >
+                                    <option value="exact">Exact</option>
+                                    <option value="starts_with">Starts With</option>
+                                    <option value="contains">Contains</option>
+                                  </select>
+                                  <input
+                                    type="number" inputMode="numeric" aria-label="Priority"
+                                    value={editRuleForm.priority}
+                                    onChange={(e) => setEditRuleForm((f) => ({ ...f, priority: e.target.value }))}
+                                    className="bg-zinc-800 border border-zinc-600 rounded-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                                  />
+                                </div>
+                                <div className="flex gap-2">
+                                  <button onClick={() => handleSaveRule(r.id)} disabled={editRuleSaving}
+                                    className="flex-1 bg-cyan-500 disabled:opacity-50 text-white text-sm py-2 rounded-lg">
+                                    {editRuleSaving ? "Saving…" : "Save"}
+                                  </button>
+                                  <button onClick={() => { setEditingRuleId(null); setEditRuleError(""); }}
+                                    className="flex-1 bg-white/[0.05] text-zinc-300 text-sm py-2 rounded-lg">
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="hidden sm:table-cell px-3 py-2">
                               <select
                                 value={editRuleForm.match_type}
                                 onChange={(e) => setEditRuleForm((f) => ({ ...f, match_type: e.target.value }))}
-                                className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                                className="w-full bg-zinc-700 border border-zinc-600 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400"
                               >
                                 <option value="exact">Exact</option>
                                 <option value="starts_with">Starts With</option>
                                 <option value="contains">Contains</option>
                               </select>
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="hidden sm:table-cell px-3 py-2">
                               <input
                                 value={editRuleForm.pattern}
                                 onChange={(e) => setEditRuleForm((f) => ({ ...f, pattern: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleSaveRule(r.id);
+                                  if (e.key === "Escape") { setEditingRuleId(null); setEditRuleError(""); }
+                                }}
                                 className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs font-mono w-full focus:outline-none focus:ring-1 focus:ring-cyan-400"
                               />
                             </td>
-                            <td className="px-3 py-2 text-right">
+                            <td className="hidden sm:table-cell px-3 py-2 text-right">
                               <input
                                 type="number"
                                 value={editRuleForm.priority}
                                 onChange={(e) => setEditRuleForm((f) => ({ ...f, priority: e.target.value }))}
-                                className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                                className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs w-full text-right focus:outline-none focus:ring-1 focus:ring-cyan-400"
                               />
                             </td>
-                            <td className="px-3 py-2 text-right">
+                            <td className="hidden sm:table-cell px-3 py-2 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button
                                   onClick={() => handleSaveRule(r.id)}
                                   disabled={editRuleSaving}
-                                  className="text-cyan-400 hover:text-cyan-300 text-xs disabled:opacity-50 transition-colors"
+                                  title="Save (Enter)"
+                                  className="text-green-400 hover:text-green-300 disabled:opacity-50 transition-colors"
                                 >
-                                  {editRuleSaving ? "…" : "Save"}
+                                  {editRuleSaving ? "…" : "✓"}
                                 </button>
                                 <button
                                   onClick={() => { setEditingRuleId(null); setEditRuleError(""); }}
-                                  className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+                                  title="Cancel (Esc)"
+                                  className="text-zinc-500 hover:text-zinc-300 transition-colors"
                                 >
-                                  Cancel
+                                  ✕
                                 </button>
                               </div>
-                              {editRuleError && <p className="text-red-400 text-xs mt-1 text-right">{editRuleError}</p>}
                             </td>
                           </tr>
+                          {editRuleError && (
+                            <tr className="bg-white/[0.03]">
+                              <td colSpan={4} className="px-3 pb-2 text-red-400 text-xs">{editRuleError}</td>
+                            </tr>
+                          )}
+                          </React.Fragment>
                         ) : (
                           <tr key={r.id} className="border-t border-white/[0.06] hover:bg-white/[0.02]">
-                            <td className="px-3 py-2 text-zinc-400 capitalize text-xs">{r.match_type.replace("_", " ")}</td>
-                            <td className="px-3 py-2 font-mono text-yellow-300 text-xs truncate">{r.pattern}</td>
-                            <td className="px-3 py-2 text-right text-zinc-500 text-xs">{r.priority}</td>
-                            <td className="px-3 py-2 text-right">
+                            <td className="px-2 sm:px-3 py-2 text-zinc-400 capitalize text-xs">{r.match_type.replace("_", " ")}</td>
+                            <td className="px-2 sm:px-3 py-2 font-mono text-yellow-300 text-xs truncate" title={r.pattern}>{r.pattern}</td>
+                            <td className="px-2 sm:px-3 py-2 text-right text-zinc-500 text-xs">{r.priority}</td>
+                            <td className="px-2 sm:px-3 py-2 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button
                                   onClick={() => startEditRule(r)}

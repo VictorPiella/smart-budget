@@ -52,6 +52,11 @@ export default function InvestmentPage() {
   const [savingContrib, setSavingContrib]   = useState(null); // `${catId}-${year}`
   const [saveContribErr, setSaveContribErr] = useState({});   // `${catId}-${year}` → string
 
+  // Extra empty years shown before the first year with data — keyed by category id
+  const [extraYearsBack, setExtraYearsBack] = useState({});
+  // Year-over-Year row currently in edit mode: `${catId}-${year}` or null
+  const [editingRow, setEditingRow] = useState(null);
+
   // ── Fetch categories (the investment selection is stored server-side) ─────
 
   const fetchCategories = useCallback(async () => {
@@ -134,11 +139,31 @@ export default function InvestmentPage() {
 
   const getCatSummary = (catId) => investSummary.find((cs) => cs.category_id === catId);
 
-  const getDisplayValue = (catId) => {
-    const key = `${catId}-${year}`;
+  // Every year from the first one with data (or earlier, via "+ Add year")
+  // up to today, so years without transactions can still get a value.
+  const buildYearRows = (cs, back) => {
+    const known  = cs ? cs.years : [];
+    const byYear = Object.fromEntries(known.map((r) => [r.year, r]));
+    const first  = Math.min(THIS_YEAR, ...known.map((r) => r.year)) - back;
+    const last   = Math.max(THIS_YEAR, ...known.map((r) => r.year));
+    const rows   = [];
+    let cumulative = 0;
+    for (let y = first; y <= last; y++) {
+      const r = byYear[y] ?? {
+        year: y, contributed: 0, tx_contributed: 0, is_manual: false, cumulative,
+        snapshot_value: null, manual_contribution: null, snapshot_updated_at: null,
+      };
+      cumulative = r.cumulative;
+      rows.push(r);
+    }
+    return rows;
+  };
+
+  const getDisplayValue = (catId, yr = year) => {
+    const key = `${catId}-${yr}`;
     if (dirtyInputs[key] !== undefined) return dirtyInputs[key];
     const cs  = getCatSummary(catId);
-    const row = cs?.years.find((r) => r.year === year);
+    const row = cs?.years.find((r) => r.year === yr);
     return row?.snapshot_value != null ? String(row.snapshot_value) : "";
   };
 
@@ -154,9 +179,10 @@ export default function InvestmentPage() {
     return row?.manual_contribution != null ? String(row.manual_contribution) : "";
   };
 
-  const handleValueChange = (catId, val) => {
-    setSaveError((prev) => { const n = { ...prev }; delete n[catId]; return n; });
-    setDirtyInputs((prev) => ({ ...prev, [`${catId}-${year}`]: val }));
+  const handleValueChange = (catId, val, yr = year) => {
+    const key = `${catId}-${yr}`;
+    setSaveError((prev) => { const n = { ...prev }; delete n[key]; return n; });
+    setDirtyInputs((prev) => ({ ...prev, [key]: val }));
   };
 
   const handleContribChange = (catId, yr, val) => {
@@ -167,38 +193,40 @@ export default function InvestmentPage() {
 
   // ── Save snapshot value on blur ───────────────────────────────────────────
 
-  const handleValueBlur = async (catId) => {
-    const key = `${catId}-${year}`;
+  const handleValueBlur = async (catId, yr = year) => {
+    const key = `${catId}-${yr}`;
     const raw = dirtyInputs[key];
-    if (raw === undefined) return;
+    if (raw === undefined) return true;
 
     const num = parseFloat(raw.replace(",", "."));
     if (isNaN(num) || num < 0) {
       setDirtyInputs((prev) => { const n = { ...prev }; delete n[key]; return n; });
-      return;
+      return true;
     }
 
-    const existing = getSnapshotRow(catId, year);
+    const existing = getSnapshotRow(catId, yr);
     if (existing?.snapshot_value != null && Math.abs(existing.snapshot_value - num) < 0.001) {
       setDirtyInputs((prev) => { const n = { ...prev }; delete n[key]; return n; });
-      return;
+      return true;
     }
 
-    setSavingFor(catId);
-    setSaveError((prev) => { const n = { ...prev }; delete n[catId]; return n; });
+    setSavingFor(key);
+    setSaveError((prev) => { const n = { ...prev }; delete n[key]; return n; });
     try {
       await api.put(`/accounts/${selectedAccount.id}/investment-snapshots`, {
         category_id: catId,
-        year,
+        year: yr,
         value: num,
       });
       await fetchInvestSummary();
       setDirtyInputs((prev) => { const n = { ...prev }; delete n[key]; return n; });
+      return true;
     } catch (err) {
       setSaveError((prev) => ({
         ...prev,
-        [catId]: apiError(err, "Could not save — check connection."),
+        [key]: apiError(err, "Could not save — check connection."),
       }));
+      return false;
     } finally {
       setSavingFor(null);
     }
@@ -210,18 +238,18 @@ export default function InvestmentPage() {
     const dk  = `contrib-${catId}-${yr}`;
     const ek  = `${catId}-${yr}`;
     const raw = dirtyContribs[dk];
-    if (raw === undefined) return;
+    if (raw === undefined) return true;
 
     const num = parseFloat(raw.replace(",", "."));
     if (isNaN(num) || num < 0) {
       setDirtyContribs((prev) => { const n = { ...prev }; delete n[dk]; return n; });
-      return;
+      return true;
     }
 
     const existing = getSnapshotRow(catId, yr);
     if (existing?.manual_contribution != null && Math.abs(existing.manual_contribution - num) < 0.001) {
       setDirtyContribs((prev) => { const n = { ...prev }; delete n[dk]; return n; });
-      return;
+      return true;
     }
 
     setSavingContrib(ek);
@@ -234,14 +262,44 @@ export default function InvestmentPage() {
       });
       await fetchInvestSummary();
       setDirtyContribs((prev) => { const n = { ...prev }; delete n[dk]; return n; });
+      return true;
     } catch (err) {
       setSaveContribErr((prev) => ({
         ...prev,
         [ek]: apiError(err, "Could not save."),
       }));
+      return false;
     } finally {
       setSavingContrib(null);
     }
+  };
+
+  // ── Year-over-Year row edit mode (✎ → inputs → save / cancel) ─────────────
+
+  const startRowEdit = (catId, yr) => {
+    if (editingRow) cancelRowEdit();
+    setEditingRow(`${catId}-${yr}`);
+  };
+
+  const cancelRowEdit = () => {
+    if (!editingRow) return;
+    const key = editingRow;
+    setDirtyInputs((prev) => { const n = { ...prev }; delete n[key]; return n; });
+    setDirtyContribs((prev) => { const n = { ...prev }; delete n[`contrib-${key}`]; return n; });
+    setSaveError((prev) => { const n = { ...prev }; delete n[key]; return n; });
+    setSaveContribErr((prev) => { const n = { ...prev }; delete n[key]; return n; });
+    setEditingRow(null);
+  };
+
+  const saveRowEdit = async (catId, yr) => {
+    const okContrib = await handleContribBlur(catId, yr);
+    const okValue   = await handleValueBlur(catId, yr);
+    if (okContrib && okValue) setEditingRow(null);   // stay open to show the error
+  };
+
+  const rowKeyDown = (catId, yr) => (e) => {
+    if (e.key === "Enter")  { e.preventDefault(); saveRowEdit(catId, yr); }
+    if (e.key === "Escape") { e.preventDefault(); cancelRowEdit(); }
   };
 
   // ── Derivations ───────────────────────────────────────────────────────────
@@ -391,14 +449,14 @@ export default function InvestmentPage() {
         const gainPct = cardCostBasis > 0 && gain != null
           ? ((gain / cardCostBasis) * 100).toFixed(1) : null;
 
-        const isSaving    = savingFor === cat.id;
+        const isSaving    = savingFor === `${cat.id}-${year}`;
         const isDirty     = dirtyInputs[`${cat.id}-${year}`] !== undefined;
-        const errMsg      = saveError[cat.id];
+        const errMsg      = saveError[`${cat.id}-${year}`];
 
         const lastUpdated    = yearRow?.snapshot_updated_at;
         const lastUpdatedFmt = fmtSnapDate(lastUpdated, year);
 
-        const allYears = cs ? [...cs.years].sort((a, b) => a.year - b.year) : [];
+        const allYears = buildYearRows(cs, extraYearsBack[cat.id] || 0);
 
         // Manual contribution input state for the current year card
         const contribDk        = `contrib-${cat.id}-${year}`;
@@ -420,7 +478,7 @@ export default function InvestmentPage() {
             </div>
 
             {/* Year stats */}
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 text-sm">
               <div>
                 <span className="text-zinc-400">Contributed in {year}: </span>
                 <span className="text-white font-medium">{fmt(contributed, currency)}</span>
@@ -565,8 +623,16 @@ export default function InvestmentPage() {
             {/* ── Year-over-year table ─────────────────────────────────── */}
             {allYears.length > 0 && (
               <div className="border-t border-white/[0.06] pt-4">
-                <p className="text-xs text-zinc-500 uppercase tracking-wide mb-3">Year-over-Year</p>
-                <div className="overflow-x-auto">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs text-zinc-500 uppercase tracking-wide">Year-over-Year</p>
+                  <button
+                    onClick={() => setExtraYearsBack((prev) => ({ ...prev, [cat.id]: (prev[cat.id] || 0) + 1 }))}
+                    className="text-xs text-zinc-400 hover:text-white border border-white/[0.08] rounded px-2 py-1"
+                  >
+                    + Add {allYears[0]?.year - 1}
+                  </button>
+                </div>
+                <div className="hidden sm:block overflow-x-auto">
                   <table className="w-full text-sm min-w-[720px]">
                     <thead>
                       <tr className="text-xs text-zinc-500 uppercase border-b border-white/[0.06]">
@@ -576,7 +642,8 @@ export default function InvestmentPage() {
                         <th className="text-right pb-2 pr-4">Value</th>
                         <th className="text-right pb-2 pr-4">Annual Gain</th>
                         <th className="text-right pb-2 pr-4">%</th>
-                        <th className="text-right pb-2">Recorded</th>
+                        <th className="text-right pb-2 pr-2">Recorded</th>
+                        <th className="pb-2 w-16"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -592,16 +659,18 @@ export default function InvestmentPage() {
                           ? ((g / costBasis) * 100).toFixed(1) : null;
                         const dateFmt = fmtSnapDate(row.snapshot_updated_at, row.year);
 
-                        // Inline manual-contribution editing in the YoY table
-                        const rowDk       = `contrib-${cat.id}-${row.year}`;
-                        const rowDisplay  = getContribDisplay(cat.id, row.year);
-                        const rowDirty    = dirtyContribs[rowDk] !== undefined;
-                        const rowSaving   = savingContrib === `${cat.id}-${row.year}`;
+                        const rowKey      = `${cat.id}-${row.year}`;
+                        const isEditing   = editingRow === rowKey;
+                        const contribEditable = !(row.tx_contributed > 0 && !row.is_manual);
+                        const rowSaving   = savingContrib === rowKey || savingFor === rowKey;
+                        const rowError    = saveError[rowKey] || saveContribErr[rowKey];
+                        const inputCls    = "w-28 bg-zinc-800 border border-white/[0.12] rounded px-2 py-1 text-xs text-right " +
+                                            "focus:outline-none focus:ring-1 focus:ring-cyan-400";
 
                         return (
                           <tr key={row.year}
-                            className={`border-b border-white/[0.05] transition-colors ${
-                              isCurrent ? "bg-cyan-900/20" : "hover:bg-white/[0.02]"
+                            className={`group border-b border-white/[0.05] transition-colors ${
+                              isEditing ? "bg-white/[0.04]" : isCurrent ? "bg-cyan-900/20" : "hover:bg-white/[0.02]"
                             }`}
                           >
                             <td className={`py-2 pr-4 font-medium ${isCurrent ? "text-cyan-300" : "text-zinc-300"}`}>
@@ -609,44 +678,55 @@ export default function InvestmentPage() {
                               {isCurrent && <span className="ml-1.5 text-xs font-normal text-cyan-400">(current)</span>}
                             </td>
 
-                            {/* Contributed — editable for manual override */}
+                            {/* Contributed — from transactions, or a manual override */}
                             <td className="py-2 pr-4 text-right">
-                              {row.is_manual ? (
-                                // Already has a manual value — show it with edit capability
-                                <div className="flex items-center justify-end gap-1">
-                                  <span className="text-amber-300">{fmt(row.contributed, currency)}</span>
-                                  <span className="text-xs text-amber-600 font-normal">M</span>
-                                </div>
-                              ) : row.tx_contributed > 0 ? (
-                                // Has real transactions — show auto value
-                                <span className="text-zinc-400">{fmt(row.contributed, currency)}</span>
-                              ) : (
-                                // No transactions, no manual — editable inline
+                              {isEditing && contribEditable ? (
                                 <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={rowDisplay}
+                                  type="number" min="0" step="0.01" inputMode="decimal"
+                                  autoFocus
+                                  value={getContribDisplay(cat.id, row.year)}
                                   onChange={(e) => handleContribChange(cat.id, row.year, e.target.value)}
-                                  onBlur={() => handleContribBlur(cat.id, row.year)}
+                                  onKeyDown={rowKeyDown(cat.id, row.year)}
                                   placeholder="0.00"
                                   disabled={rowSaving}
-                                  className={`w-28 bg-zinc-800 border rounded px-2 py-1 text-xs text-right
-                                    focus:outline-none focus:ring-1 focus:ring-amber-500
-                                    ${rowDirty ? "border-yellow-600/60" : "border-white/[0.08]"}
-                                    ${rowSaving ? "opacity-50" : ""}`}
+                                  className={inputCls}
                                 />
+                              ) : row.is_manual ? (
+                                <span className="text-amber-300" title="Manual contribution">
+                                  {fmt(row.contributed, currency)}
+                                  <span className="ml-1 text-xs text-amber-600">M</span>
+                                </span>
+                              ) : row.contributed > 0 ? (
+                                <span className="text-zinc-400" title="From transactions">{fmt(row.contributed, currency)}</span>
+                              ) : (
+                                <span className="text-zinc-600">—</span>
                               )}
                             </td>
 
                             <td className="py-2 pr-4 text-right text-white">
                               {fmt(row.cumulative, currency)}
                             </td>
+
+                            {/* Value — at 31 Dec for past years, current value for this year */}
                             <td className="py-2 pr-4 text-right">
-                              {row.snapshot_value != null
-                                ? <span className="text-white">{fmt(row.snapshot_value, currency)}</span>
-                                : <span className="text-zinc-600">—</span>}
+                              {isEditing ? (
+                                <input
+                                  type="number" min="0" step="0.01" inputMode="decimal"
+                                  autoFocus={!contribEditable}
+                                  value={getDisplayValue(cat.id, row.year)}
+                                  onChange={(e) => handleValueChange(cat.id, e.target.value, row.year)}
+                                  onKeyDown={rowKeyDown(cat.id, row.year)}
+                                  placeholder={row.year < THIS_YEAR ? `31 Dec ${row.year}` : "Current"}
+                                  disabled={rowSaving}
+                                  className={inputCls}
+                                />
+                              ) : row.snapshot_value != null ? (
+                                <span className="text-white">{fmt(row.snapshot_value, currency)}</span>
+                              ) : (
+                                <span className="text-zinc-600">—</span>
+                              )}
                             </td>
+
                             <td className="py-2 pr-4 text-right">
                               {g != null ? (
                                 <span className={g >= 0 ? "text-green-400" : "text-red-400"}>
@@ -661,8 +741,33 @@ export default function InvestmentPage() {
                                 </span>
                               ) : <span className="text-zinc-600">—</span>}
                             </td>
-                            <td className="py-2 text-right text-zinc-600 text-xs">
-                              {dateFmt ?? "—"}
+                            <td className="py-2 pr-2 text-right text-xs">
+                              {rowError
+                                ? <span className="text-red-400">{rowError}</span>
+                                : <span className="text-zinc-600">{dateFmt ?? "—"}</span>}
+                            </td>
+
+                            {/* Actions */}
+                            <td className="py-2 text-right whitespace-nowrap">
+                              {isEditing ? (
+                                <>
+                                  <button onClick={() => saveRowEdit(cat.id, row.year)} disabled={rowSaving}
+                                    title="Save (Enter)"
+                                    className="px-1.5 text-green-400 hover:text-green-300 disabled:opacity-40">
+                                    {rowSaving ? "…" : "✓"}
+                                  </button>
+                                  <button onClick={cancelRowEdit} title="Cancel (Esc)"
+                                    className="px-1.5 text-zinc-500 hover:text-zinc-300">
+                                    ✕
+                                  </button>
+                                </>
+                              ) : (
+                                <button onClick={() => startRowEdit(cat.id, row.year)}
+                                  title={`Edit ${row.year}`}
+                                  className="px-1.5 text-zinc-600 hover:text-cyan-400 transition-colors">
+                                  ✎
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -670,7 +775,120 @@ export default function InvestmentPage() {
                     </tbody>
                   </table>
                 </div>
+
+                <div className="sm:hidden space-y-2">
+                  {[...allYears].reverse().map((row) => {
+                    const prevRow   = allYears.find((r) => r.year === row.year - 1);
+                    const costBasis = prevRow?.snapshot_value != null
+                      ? prevRow.snapshot_value + row.contributed
+                      : row.cumulative;
+                    const g    = row.snapshot_value != null ? row.snapshot_value - costBasis : null;
+                    const gPct = costBasis > 0 && g != null ? ((g / costBasis) * 100).toFixed(1) : null;
+
+                    const rowKey    = `${cat.id}-${row.year}`;
+                    const isEditing = editingRow === rowKey;
+                    const contribEditable = !(row.tx_contributed > 0 && !row.is_manual);
+                    const rowSaving = savingContrib === rowKey || savingFor === rowKey;
+                    const rowError  = saveError[rowKey] || saveContribErr[rowKey];
+                    const field     = "w-full bg-zinc-800 border border-white/[0.12] rounded-lg px-3 py-2 text-sm text-right " +
+                                      "focus:outline-none focus:ring-1 focus:ring-cyan-400";
+                    const isThisYear = row.year === THIS_YEAR;
+
+                    return (
+                      <div key={row.year}
+                        className={`rounded-xl p-3 border ${
+                          isEditing ? "border-cyan-500/40 bg-white/[0.04]"
+                          : isThisYear ? "border-cyan-500/20 bg-cyan-900/10"
+                          : "border-white/[0.06] bg-white/[0.02]"}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`font-semibold ${isThisYear ? "text-cyan-300" : "text-zinc-200"}`}>
+                            {row.year}
+                            {isThisYear && <span className="ml-1.5 text-xs font-normal text-cyan-400">(current)</span>}
+                          </span>
+                          {!isEditing && (
+                            <button onClick={() => startRowEdit(cat.id, row.year)}
+                              className="text-zinc-500 hover:text-cyan-400 px-2 py-1 -mr-2" title={`Edit ${row.year}`}>
+                              ✎
+                            </button>
+                          )}
+                        </div>
+
+                        {isEditing ? (
+                          <div className="space-y-2">
+                            {contribEditable ? (
+                              <label className="block">
+                                <span className="text-[11px] text-zinc-500 uppercase tracking-wide">Contributed in {row.year}</span>
+                                <input type="number" min="0" step="0.01" inputMode="decimal" autoFocus
+                                  value={getContribDisplay(cat.id, row.year)}
+                                  onChange={(e) => handleContribChange(cat.id, row.year, e.target.value)}
+                                  onKeyDown={rowKeyDown(cat.id, row.year)}
+                                  placeholder="0.00" disabled={rowSaving} className={field} />
+                              </label>
+                            ) : (
+                              <p className="text-xs text-zinc-500">
+                                Contributed {fmt(row.contributed, currency)} (from transactions)
+                              </p>
+                            )}
+                            <label className="block">
+                              <span className="text-[11px] text-zinc-500 uppercase tracking-wide">
+                                {row.year < THIS_YEAR ? `Value at 31 Dec ${row.year}` : "Current value"}
+                              </span>
+                              <input type="number" min="0" step="0.01" inputMode="decimal" autoFocus={!contribEditable}
+                                value={getDisplayValue(cat.id, row.year)}
+                                onChange={(e) => handleValueChange(cat.id, e.target.value, row.year)}
+                                onKeyDown={rowKeyDown(cat.id, row.year)}
+                                placeholder="0.00" disabled={rowSaving} className={field} />
+                            </label>
+                            {rowError && <p className="text-xs text-red-400">{rowError}</p>}
+                            <div className="flex gap-2 pt-1">
+                              <button onClick={() => saveRowEdit(cat.id, row.year)} disabled={rowSaving}
+                                className="flex-1 bg-cyan-500 disabled:opacity-50 text-white text-sm py-2 rounded-lg">
+                                {rowSaving ? "Saving…" : "Save"}
+                              </button>
+                              <button onClick={cancelRowEdit}
+                                className="flex-1 bg-white/[0.05] text-zinc-300 text-sm py-2 rounded-lg">
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                            <div>
+                              <p className="text-[11px] text-zinc-500 uppercase tracking-wide">Contributed</p>
+                              <p className={row.is_manual ? "text-amber-300" : "text-zinc-300"}>
+                                {row.contributed > 0 || row.is_manual ? fmt(row.contributed, currency) : "—"}
+                                {row.is_manual && <span className="ml-1 text-xs text-amber-600">M</span>}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-zinc-500 uppercase tracking-wide">Cumulative</p>
+                              <p className="text-white">{fmt(row.cumulative, currency)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-zinc-500 uppercase tracking-wide">
+                                {row.year < THIS_YEAR ? "Value 31 Dec" : "Value"}
+                              </p>
+                              <p className={row.snapshot_value != null ? "text-white font-medium" : "text-zinc-600"}>
+                                {row.snapshot_value != null ? fmt(row.snapshot_value, currency) : "—"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-zinc-500 uppercase tracking-wide">Annual gain</p>
+                              {g != null ? (
+                                <p className={g >= 0 ? "text-green-400" : "text-red-400"}>
+                                  {g >= 0 ? "+" : ""}{fmt(g, currency)}
+                                  {gPct != null && <span className="ml-1 text-xs opacity-75">({g >= 0 ? "+" : ""}{gPct}%)</span>}
+                                </p>
+                              ) : <p className="text-zinc-600">—</p>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
                 <p className="text-xs text-zinc-700 mt-2 italic">
+                  Value = market value at 31 Dec of that year (current value for {THIS_YEAR}).
                   Annual gain = year-end value − (prior year value + new contributions).
                   First year or years without a prior snapshot use total cumulative as basis.
                   <span className="ml-2 text-amber-700">M = manual contribution override.</span>

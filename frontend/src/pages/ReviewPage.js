@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import api from "../api";
 import { useAccounts } from "../context/AccountContext";
+import { CategoryChip, MobileTxnEditCell, MobileTxnMeta } from "../components/TxnMobile";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -248,7 +249,7 @@ export default function ReviewPage() {
             <table className="w-full text-sm min-w-max">
               <thead>
                 <tr className="text-zinc-400 text-xs uppercase border-b border-white/[0.06]">
-                  <th className="text-left py-2 pr-4">Category</th>
+                  <th className="sticky left-0 z-10 bg-[#0d0d1a] text-left py-2 pr-4">Category</th>
                   {MONTHS.map((m, i) => (
                     <th key={m} className="text-right py-2 px-2">
                       <button
@@ -269,7 +270,7 @@ export default function ReviewPage() {
                     key={row.category_name}
                     className={`border-b border-white/[0.05] hover:bg-white/[0.02] ${row.exclude_from_totals ? "opacity-50" : ""}`}
                   >
-                    <td className="py-2 pr-4 font-medium whitespace-nowrap" style={{ color: row.exclude_from_totals ? "#9ca3af" : row.category_color }}>
+                    <td className="sticky left-0 z-10 bg-[#0d0d1a] py-2 pr-4 font-medium whitespace-nowrap max-w-[9rem] sm:max-w-none truncate" style={{ color: row.exclude_from_totals ? "#9ca3af" : row.category_color }}>
                       {row.category_name}
                       {row.exclude_from_totals && (
                         <span className="ml-2 text-[10px] font-normal text-amber-500 bg-amber-900/30 px-1.5 py-0.5 rounded align-middle">excluded</span>
@@ -306,7 +307,7 @@ export default function ReviewPage() {
                   const total = Math.round(savings.reduce((a, b) => a + b, 0) * 100) / 100;
                   return (
                     <tr className="border-t-2 border-zinc-600 bg-white/[0.03] font-semibold">
-                      <td className="py-2.5 pr-4 text-cyan-300 text-sm tracking-wide">
+                      <td className="sticky left-0 z-10 bg-[#13131f] py-2.5 pr-4 text-cyan-300 text-sm tracking-wide">
                         Savings
                       </td>
                       {savings.map((v, i) => (
@@ -359,10 +360,10 @@ export default function ReviewPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-zinc-400 text-xs uppercase border-b border-white/[0.06]">
-                      <th className="text-left py-2 pr-4">Date</th>
+                      <th className="hidden sm:table-cell text-left py-2 pr-4">Date</th>
                       <th className="text-left py-2 pr-4">Description</th>
                       <th className="text-right py-2 pr-4">Amount</th>
-                      <th className="text-left py-2 pr-4">Category</th>
+                      <th className="hidden sm:table-cell text-left py-2 pr-4">Category</th>
                       <th className="py-2"></th>
                     </tr>
                   </thead>
@@ -382,7 +383,7 @@ export default function ReviewPage() {
                         >
                           {isEditing ? (
                             <>
-                              <td className="py-1.5 pr-3">
+                              <td className="hidden sm:table-cell py-1.5 pr-3">
                                 <input
                                   type="date"
                                   value={editForm.date}
@@ -390,14 +391,14 @@ export default function ReviewPage() {
                                   className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-32"
                                 />
                               </td>
-                              <td className="py-1.5 pr-3">
+                              <td className="hidden sm:table-cell py-1.5 pr-3">
                                 <input
                                   value={editForm.raw_description}
                                   onChange={(e) => setEditForm((f) => ({ ...f, raw_description: e.target.value }))}
                                   className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full min-w-[180px]"
                                 />
                               </td>
-                              <td className="py-1.5 pr-3 text-right">
+                              <td className="hidden sm:table-cell py-1.5 pr-3 text-right">
                                 <input
                                   type="number"
                                   step="0.01"
@@ -406,7 +407,7 @@ export default function ReviewPage() {
                                   className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400 w-28 text-right"
                                 />
                               </td>
-                              <td className="py-1.5 pr-3">
+                              <td className="hidden sm:table-cell py-1.5 pr-3">
                                 <select
                                   value={editForm.category_id}
                                   onChange={(e) => setEditForm((f) => ({ ...f, category_id: e.target.value }))}
@@ -418,7 +419,7 @@ export default function ReviewPage() {
                                   ))}
                                 </select>
                               </td>
-                              <td className="py-1.5 text-right whitespace-nowrap">
+                              <td className="hidden sm:table-cell py-1.5 text-right whitespace-nowrap">
                                 <button
                                   onClick={() => handleSaveEdit(t.id)}
                                   disabled={editSaving}
@@ -440,41 +441,27 @@ export default function ReviewPage() {
                                   Delete
                                 </button>
                               </td>
+                            <MobileTxnEditCell
+                              colSpan={3}
+                              editForm={editForm}
+                              setEditForm={setEditForm}
+                              categories={categories}
+                              onSave={() => handleSaveEdit(t.id)}
+                              onCancel={() => setEditingId(null)}
+                              onDelete={() => handleDeleteTxn(t.id)}
+                              saving={editSaving}
+                            />
                             </>
                           ) : (
                             <>
-                              <td className="py-2 pr-4 text-zinc-400 whitespace-nowrap">{t.date}</td>
-                              <td className="py-2 pr-4 max-w-xs truncate">{t.raw_description}</td>
+                              <td className="hidden sm:table-cell py-2 pr-4 text-zinc-400 whitespace-nowrap">{t.date}</td>
+                              <td className="py-2 pr-4 max-w-[13rem] sm:max-w-xs break-words sm:truncate">{t.raw_description}<MobileTxnMeta txn={t} catMap={catMap} /></td>
                               <td className={`py-2 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}>
                                 {parseFloat(t.amount).toFixed(2)}
                               </td>
-                              <td className="py-2 pr-4">
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {t.category_id ? (() => {
-                                    const cat = catMap[t.category_id];
-                                    return cat ? (
-                                      <span
-                                        className="text-xs px-2 py-0.5 rounded font-medium"
-                                        style={{ backgroundColor: `${cat.color}30`, color: cat.color, border: `1px solid ${cat.color}60` }}
-                                      >
-                                        {cat.name}
-                                      </span>
-                                    ) : (
-                                      <span className="bg-violet-900/50 text-cyan-300 text-xs px-2 py-0.5 rounded">mapped</span>
-                                    );
-                                  })() : (
-                                    <span className="bg-yellow-900/50 text-yellow-300 text-xs px-2 py-0.5 rounded">unmapped</span>
-                                  )}
-                                  {t.is_manual && (
-                                    <span
-                                      className="text-xs text-zinc-500 bg-white/[0.04] border border-white/[0.07] px-1 py-0.5 rounded"
-                                      title="Manually assigned"
-                                    >
-                                      M
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
+                              <td className="hidden sm:table-cell py-2 pr-4">
+                              <CategoryChip txn={t} catMap={catMap} />
+                            </td>
                               <td className="py-2 text-right">
                                 <button
                                   onClick={() => startEdit(t)}

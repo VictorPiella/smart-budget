@@ -167,9 +167,23 @@ export default function InboxPage() {
     );
   }
 
+  const renderAssign = (t, sizeCls) => (
+    <select
+      defaultValue=""
+      disabled={categories.length === 0 || assigning[t.id]}
+      onChange={(e) => handleAssignCategory(t.id, e.target.value)}
+      className={`bg-white/[0.04] border border-white/[0.07] rounded px-2 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 disabled:opacity-50 ${sizeCls}`}
+    >
+      <option value="" disabled>— assign —</option>
+      {categories.map((c) => (
+        <option key={c.id} value={c.id}>{c.name}</option>
+      ))}
+    </select>
+  );
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold">Unmapped Inbox</h1>
         <div className="flex items-center gap-3">
           {selected.size > 0 && (
@@ -204,7 +218,7 @@ export default function InboxPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-zinc-400 text-xs uppercase border-b border-white/[0.06]">
-                    <th className="py-2 pr-3 w-8">
+                    <th className="py-2 pr-2 sm:pr-3 w-8">
                       <input
                         type="checkbox"
                         checked={allSelected}
@@ -213,12 +227,12 @@ export default function InboxPage() {
                         title={allSelected ? "Deselect all" : "Select all"}
                       />
                     </th>
-                    <th className="text-left py-2 pr-4">Date</th>
-                    <th className="text-left py-2 pr-4">Description</th>
-                    <th className="text-right py-2 pr-4">Amount</th>
-                    <th className="py-2 pr-4">Assign</th>
-                    <th className="py-2 pr-2"></th>
-                    <th className="py-2"></th>
+                    <th className="hidden sm:table-cell text-left py-2 pr-4">Date</th>
+                    <th className="text-left py-2 pr-2 sm:pr-4">Description</th>
+                    <th className="text-right py-2 sm:pr-4">Amount</th>
+                    <th className="hidden sm:table-cell py-2 pr-4">Assign</th>
+                    <th className="hidden sm:table-cell py-2 pr-2"></th>
+                    <th className="hidden sm:table-cell py-2"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -227,7 +241,7 @@ export default function InboxPage() {
                       key={t.id}
                       className={`border-b border-white/[0.05] hover:bg-white/[0.02] ${selected.has(t.id) ? "bg-white/[0.02]" : ""}`}
                     >
-                      <td className="py-2 pr-3">
+                      <td className="py-2 pr-2 sm:pr-3">
                         <input
                           type="checkbox"
                           checked={selected.has(t.id)}
@@ -235,29 +249,32 @@ export default function InboxPage() {
                           className="accent-cyan-400 cursor-pointer"
                         />
                       </td>
-                      <td className="py-2 pr-4 text-zinc-400 whitespace-nowrap">{t.date}</td>
-                      <td className="py-2 pr-4 max-w-sm">
-                        <span className="font-mono text-xs bg-zinc-800 px-2 py-0.5 rounded text-zinc-200">
+                      <td className="hidden sm:table-cell py-2 pr-4 text-zinc-400 whitespace-nowrap">{t.date}</td>
+                      <td className="py-2 pr-2 sm:pr-4 max-w-sm">
+                        <span className="font-mono text-xs bg-zinc-800 px-2 py-0.5 rounded text-zinc-200 break-words">
                           {t.raw_description}
                         </span>
+                        {/* Mobile: date + actions under the description */}
+                        <div className="sm:hidden mt-2 space-y-2">
+                          <span className="text-xs text-zinc-500">{t.date}</span>
+                          <div className="flex items-center gap-2">
+                            {renderAssign(t, "flex-1 min-w-0 py-1.5")}
+                            <button onClick={() => openEdit(t)} title="Edit transaction"
+                              className="text-zinc-400 px-2 py-1.5 rounded bg-white/[0.04]">✎</button>
+                            <button onClick={() => openModal(t)} disabled={categories.length === 0}
+                              className="bg-cyan-500 disabled:opacity-40 text-white text-xs px-3 py-1.5 rounded whitespace-nowrap">
+                              Rule
+                            </button>
+                          </div>
+                        </div>
                       </td>
-                      <td className={`py-2 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      <td className={`py-2 sm:pr-4 text-right font-mono whitespace-nowrap ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}>
                         {parseFloat(t.amount).toFixed(2)}
                       </td>
-                      <td className="py-2 pr-4">
-                        <select
-                          defaultValue=""
-                          disabled={categories.length === 0 || assigning[t.id]}
-                          onChange={(e) => handleAssignCategory(t.id, e.target.value)}
-                          className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 disabled:opacity-50"
-                        >
-                          <option value="" disabled>— assign —</option>
-                          {categories.map((c) => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </select>
+                      <td className="hidden sm:table-cell py-2 pr-4">
+                        {renderAssign(t, "py-1")}
                       </td>
-                      <td className="py-2 pr-2">
+                      <td className="hidden sm:table-cell py-2 pr-2">
                         <button
                           onClick={() => openEdit(t)}
                           title="Edit transaction"
@@ -266,7 +283,7 @@ export default function InboxPage() {
                           ✎
                         </button>
                       </td>
-                      <td className="py-2 text-right">
+                      <td className="hidden sm:table-cell py-2 text-right">
                         <button
                           onClick={() => openModal(t)}
                           disabled={categories.length === 0}
@@ -288,7 +305,7 @@ export default function InboxPage() {
       </div>
 
       {editModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 !m-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card p-5 w-full max-w-sm p-6 space-y-4">
             <h2 className="text-lg font-semibold">Edit Transaction</h2>
             <form onSubmit={handleSaveEdit} className="space-y-3">
@@ -345,7 +362,7 @@ export default function InboxPage() {
       )}
 
       {ruleModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 !m-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card p-5 w-full max-w-md p-6 space-y-4">
             <h2 className="text-lg font-semibold">Create Mapping Rule</h2>
             <p className="text-xs text-zinc-400 font-mono bg-zinc-800 px-3 py-2 rounded break-all">

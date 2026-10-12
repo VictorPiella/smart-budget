@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api, { apiError } from "../api";
 import { useAccounts } from "../context/AccountContext";
+import { CategoryChip, MobileTxnEditCell, MobileTxnMeta } from "../components/TxnMobile";
 import { useNavigate } from "react-router-dom";
 
 export default function DashboardPage() {
@@ -199,15 +200,16 @@ export default function DashboardPage() {
                         setRenamingAccId(null);
                       }
                     }}
-                    className="flex-1 bg-zinc-700 border border-cyan-500 rounded px-2 py-0.5 text-sm focus:outline-none mr-2"
+                    className="flex-1 min-w-0 bg-zinc-700 border border-cyan-500 rounded px-2 py-0.5 text-sm focus:outline-none mr-2"
                   />
                 ) : (
-                  <span className="font-medium text-sm">{a.name}</span>
+                  <span className="font-medium text-sm truncate min-w-0">{a.name}</span>
                 )}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-400">{a.currency}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* While renaming on mobile, give the input the room */}
+                  <span className={`text-xs text-zinc-400 ${renamingAccId === a.id ? "hidden sm:inline" : ""}`}>{a.currency}</span>
                   <span
-                    className={`text-sm font-mono ${parseFloat(a.balance) >= 0 ? "text-green-400" : "text-red-400"}`}
+                    className={`text-sm font-mono ${renamingAccId === a.id ? "hidden sm:inline" : ""} ${parseFloat(a.balance) >= 0 ? "text-green-400" : "text-red-400"}`}
                   >
                     {parseFloat(a.balance).toFixed(2)}
                   </span>
@@ -257,13 +259,13 @@ export default function DashboardPage() {
           </ul>
 
           {accError && <p className="text-red-400 text-xs mb-2">{accError}</p>}
-          <form onSubmit={handleCreateAccount} className="flex gap-2">
+          <form onSubmit={handleCreateAccount} className="flex flex-wrap gap-2">
             <input
               value={newAccName}
               onChange={(e) => setNewAccName(e.target.value)}
               placeholder="Account name"
               required
-              className="flex-1 bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
+              className="flex-1 min-w-[10rem] bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400"
             />
             <select
               value={newAccCurrency}
@@ -366,10 +368,10 @@ export default function DashboardPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-zinc-400 text-xs uppercase border-b border-white/[0.06]">
-                    <th className="text-left py-2 pr-4">Date</th>
+                    <th className="hidden sm:table-cell text-left py-2 pr-4">Date</th>
                     <th className="text-left py-2 pr-4">Description</th>
                     <th className="text-right py-2 pr-4">Amount</th>
-                    <th className="text-left py-2 pr-4">Category</th>
+                    <th className="hidden sm:table-cell text-left py-2 pr-4">Category</th>
                     <th className="py-2"></th>
                   </tr>
                 </thead>
@@ -383,7 +385,7 @@ export default function DashboardPage() {
                       >
                         {isEditing ? (
                           <>
-                            <td className="py-1.5 pr-3">
+                            <td className="hidden sm:table-cell py-1.5 pr-3">
                               <input
                                 type="date"
                                 value={editForm.date}
@@ -396,7 +398,7 @@ export default function DashboardPage() {
                                 className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-32"
                               />
                             </td>
-                            <td className="py-1.5 pr-3">
+                            <td className="hidden sm:table-cell py-1.5 pr-3">
                               <input
                                 value={editForm.raw_description}
                                 onChange={(e) =>
@@ -408,7 +410,7 @@ export default function DashboardPage() {
                                 className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full min-w-[180px]"
                               />
                             </td>
-                            <td className="py-1.5 pr-3 text-right">
+                            <td className="hidden sm:table-cell py-1.5 pr-3 text-right">
                               <input
                                 type="number"
                                 step="0.01"
@@ -422,7 +424,7 @@ export default function DashboardPage() {
                                 className="bg-zinc-700 border border-zinc-600 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400 w-28 text-right"
                               />
                             </td>
-                            <td className="py-1.5 pr-3">
+                            <td className="hidden sm:table-cell py-1.5 pr-3">
                               <select
                                 value={editForm.category_id}
                                 onChange={(e) =>
@@ -442,7 +444,7 @@ export default function DashboardPage() {
                                 ))}
                               </select>
                             </td>
-                            <td className="py-1.5 text-right whitespace-nowrap">
+                            <td className="hidden sm:table-cell py-1.5 text-right whitespace-nowrap">
                               <button
                                 onClick={() => handleSaveEdit(t.id)}
                                 disabled={editSaving}
@@ -464,56 +466,33 @@ export default function DashboardPage() {
                                 Delete
                               </button>
                             </td>
+                            <MobileTxnEditCell
+                              colSpan={3}
+                              editForm={editForm}
+                              setEditForm={setEditForm}
+                              categories={categories}
+                              onSave={() => handleSaveEdit(t.id)}
+                              onCancel={() => setEditingId(null)}
+                              onDelete={() => handleDeleteTxn(t.id)}
+                              saving={editSaving}
+                            />
                           </>
                         ) : (
                           <>
-                            <td className="py-2 pr-4 text-zinc-400 whitespace-nowrap">
+                            <td className="hidden sm:table-cell py-2 pr-4 text-zinc-400 whitespace-nowrap">
                               {t.date}
                             </td>
-                            <td className="py-2 pr-4 max-w-xs truncate">
+                            <td className="py-2 pr-4 max-w-[13rem] sm:max-w-xs break-words sm:truncate">
                               {t.raw_description}
+                              <MobileTxnMeta txn={t} catMap={catMap} />
                             </td>
                             <td
                               className={`py-2 pr-4 text-right font-mono ${parseFloat(t.amount) >= 0 ? "text-green-400" : "text-red-400"}`}
                             >
                               {parseFloat(t.amount).toFixed(2)}
                             </td>
-                            <td className="py-2 pr-4">
-                              <div className="flex items-center gap-1 flex-wrap">
-                                {t.category_id ? (
-                                  (() => {
-                                    const cat = catMap[t.category_id];
-                                    return cat ? (
-                                      <span
-                                        className="text-xs px-2 py-0.5 rounded font-medium"
-                                        style={{
-                                          backgroundColor: `${cat.color}30`,
-                                          color: cat.color,
-                                          border: `1px solid ${cat.color}60`,
-                                        }}
-                                      >
-                                        {cat.name}
-                                      </span>
-                                    ) : (
-                                      <span className="bg-violet-900/50 text-cyan-300 text-xs px-2 py-0.5 rounded">
-                                        mapped
-                                      </span>
-                                    );
-                                  })()
-                                ) : (
-                                  <span className="bg-yellow-900/50 text-yellow-300 text-xs px-2 py-0.5 rounded">
-                                    unmapped
-                                  </span>
-                                )}
-                                {t.is_manual && (
-                                  <span
-                                    className="text-xs text-zinc-500 bg-white/[0.04] border border-white/[0.07] px-1 py-0.5 rounded"
-                                    title="Manually assigned — protected from auto-remap"
-                                  >
-                                    M
-                                  </span>
-                                )}
-                              </div>
+                            <td className="hidden sm:table-cell py-2 pr-4">
+                              <CategoryChip txn={t} catMap={catMap} />
                             </td>
                             <td className="py-2 text-right">
                               <button

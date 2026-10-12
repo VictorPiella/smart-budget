@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useAccounts } from "../context/AccountContext";
 import api, { apiError } from "../api";
@@ -22,7 +22,11 @@ const IC = {
   key:        "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
   logout:     "M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4 M16 17l5-5-5-5 M21 12H9",
   chevronD:   "M6 9l6 6 6-6",
+  more:       "M5 12h.01 M12 12h.01 M19 12h.01",
 };
+
+// Mobile bottom bar: the most used sections; the rest live in the "More" sheet.
+const MOBILE_TABS = ["/dashboard", "/import", "/review", "/inbox"];
 
 const NAV = [
   { to: "/dashboard",  label: "Dashboard",         icon: "home"     },
@@ -52,6 +56,13 @@ export default function Layout({ children }) {
   const [pwSaving, setPwSaving]       = useState(false);
   const [userCount, setUserCount]     = useState(null);
   const [accOpen, setAccOpen]         = useState(false);
+  const [moreOpen, setMoreOpen]       = useState(false);
+  const location                      = useLocation();
+
+  // Close the mobile "More" sheet whenever the route changes
+  useEffect(() => { setMoreOpen(false); }, [location.pathname]);
+
+  const openPwModal = () => { setShowPwModal(true); setPwError(""); setPwSuccess(false); setMoreOpen(false); };
 
   useEffect(() => {
     api.get("/stats").then(({ data }) => setUserCount(data.user_count)).catch(() => {});
@@ -85,7 +96,8 @@ export default function Layout({ children }) {
       {/* ════════════════════════════════════════════════════════════════
           TOP BAR
       ════════════════════════════════════════════════════════════════ */}
-      <header className="shrink-0 flex items-center gap-4 px-5 h-14" style={{
+      {/* z-50: the account dropdown inside must sit above its z-40 click-away overlay */}
+      <header className="sticky top-0 z-50 shrink-0 flex items-center gap-3 md:gap-4 px-4 md:px-5 h-14" style={{
         background: "#06060e",
         borderBottom: "1px solid rgba(255,255,255,0.05)",
       }}>
@@ -100,12 +112,12 @@ export default function Layout({ children }) {
           </div>
           <span className="text-sm font-semibold tracking-tight text-white">SmartBudget</span>
           {userCount !== null && (
-            <span className="text-[10px] text-slate-600">{userCount} users</span>
+            <span className="text-[10px] text-slate-600 hidden lg:inline">{userCount} users</span>
           )}
         </div>
 
-        {/* Nav */}
-        <nav className="flex items-center gap-0.5 flex-1 overflow-x-auto">
+        {/* Nav (desktop — mobile uses the bottom bar) */}
+        <nav className="hidden md:flex items-center gap-0.5 flex-1 overflow-x-auto">
           {NAV.map(n => (
             <NavLink key={n.to} to={n.to} end={n.to === "/dashboard"}
               className={({ isActive }) => [
@@ -137,7 +149,7 @@ export default function Layout({ children }) {
         </nav>
 
         {/* Right side: Account picker + User */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 ml-auto md:ml-0 min-w-0">
 
           {/* Account picker */}
           {accounts.length > 0 && (
@@ -147,8 +159,8 @@ export default function Layout({ children }) {
                 className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm text-slate-300 transition-colors"
                 style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}
               >
-                <span className="text-slate-600 text-[10px] font-semibold uppercase tracking-widest">Acct</span>
-                <span className="max-w-[120px] truncate">{selectedAccount?.name ?? "—"}</span>
+                <span className="text-slate-600 text-[10px] font-semibold uppercase tracking-widest hidden sm:inline">Acct</span>
+                <span className="max-w-[140px] truncate">{selectedAccount?.name ?? "—"}</span>
                 <span className={`text-slate-600 transition-transform duration-150 ${accOpen ? "rotate-180" : ""}`}>
                   <Ic d={IC.chevronD} size={12} />
                 </span>
@@ -174,10 +186,10 @@ export default function Layout({ children }) {
           )}
 
           {/* Divider */}
-          <div className="w-px h-5" style={{ background: "rgba(255,255,255,0.06)" }} />
+          <div className="w-px h-5 hidden md:block" style={{ background: "rgba(255,255,255,0.06)" }} />
 
-          {/* User avatar + actions */}
-          <div className="flex items-center gap-1.5">
+          {/* User avatar + actions (desktop — on mobile they're in the "More" sheet) */}
+          <div className="hidden md:flex items-center gap-1.5">
             <div className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-[11px] font-semibold text-white"
               style={{ background: "linear-gradient(135deg,#22d3ee,#0ea5e9)" }}>
               {user?.email?.[0]?.toUpperCase() ?? "?"}
@@ -186,11 +198,11 @@ export default function Layout({ children }) {
           </div>
 
           {[
-            { label: "Password", icon: "key",    action: () => { setShowPwModal(true); setPwError(""); setPwSuccess(false); } },
+            { label: "Password", icon: "key",    action: openPwModal },
             { label: "Logout",   icon: "logout", action: handleLogout, danger: true },
           ].map(b => (
             <button key={b.label} onClick={b.action} title={b.label}
-              className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+              className={`hidden md:flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
                 b.danger ? "text-slate-600 hover:text-red-400" : "text-slate-600 hover:text-slate-300"
               }`}
               style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
@@ -204,9 +216,74 @@ export default function Layout({ children }) {
       {/* ════════════════════════════════════════════════════════════════
           MAIN
       ════════════════════════════════════════════════════════════════ */}
-      <main className="flex-1 min-w-0 overflow-y-auto p-8">
+      {/* Bottom padding on mobile leaves room for the tab bar (+ iPhone home indicator) */}
+      <main className="flex-1 min-w-0 px-4 pt-5 pb-28 md:p-8">
         {children}
       </main>
+
+      {/* ════════════════════════════════════════════════════════════════
+          MOBILE — bottom tab bar + "More" sheet
+      ════════════════════════════════════════════════════════════════ */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 grid grid-cols-5"
+        style={{
+          background: "rgba(6,6,14,0.96)", backdropFilter: "blur(12px)",
+          borderTop: "1px solid rgba(255,255,255,0.06)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+        }}>
+        {NAV.filter(n => MOBILE_TABS.includes(n.to)).map(n => (
+          <NavLink key={n.to} to={n.to} end={n.to === "/dashboard"}
+            className={({ isActive }) =>
+              `relative flex flex-col items-center justify-center gap-1 h-16 text-[10px] font-medium ${
+                isActive ? "text-cyan-400" : "text-slate-500"}`}>
+            <Ic d={IC[n.icon]} size={20} />
+            <span>{n.label}</span>
+            {n.badge && unmappedCount > 0 && (
+              <span className="absolute top-2 left-1/2 ml-2 text-[9px] font-bold rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 num"
+                style={{ background: "#f59e0b", color: "#000" }}>
+                {unmappedCount > 99 ? "99+" : unmappedCount}
+              </span>
+            )}
+          </NavLink>
+        ))}
+        <button onClick={() => setMoreOpen(o => !o)}
+          className={`flex flex-col items-center justify-center gap-1 h-16 text-[10px] font-medium ${
+            moreOpen || NAV.some(n => !MOBILE_TABS.includes(n.to) && location.pathname.startsWith(n.to))
+              ? "text-cyan-400" : "text-slate-500"}`}>
+          <Ic d={IC.more} size={20} />
+          <span>More</span>
+        </button>
+      </nav>
+
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-30" style={{ background: "rgba(0,0,0,0.6)" }}
+          onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-x-0 rounded-t-2xl p-2"
+            style={{
+              bottom: "calc(4rem + env(safe-area-inset-bottom))",
+              background: "#0d0d1a", border: "1px solid rgba(255,255,255,0.08)",
+            }}
+            onClick={e => e.stopPropagation()}>
+            {NAV.filter(n => !MOBILE_TABS.includes(n.to)).map(n => (
+              <NavLink key={n.to} to={n.to}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm ${
+                    isActive ? "text-cyan-400 bg-white/[0.04]" : "text-slate-300"}`}>
+                <Ic d={IC[n.icon]} size={18} />{n.label}
+              </NavLink>
+            ))}
+            <div className="my-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
+            <button onClick={openPwModal}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm text-slate-300">
+              <Ic d={IC.key} size={18} />Change password
+            </button>
+            <button onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm text-red-400">
+              <Ic d={IC.logout} size={18} />Logout
+              <span className="ml-auto text-xs text-slate-600 truncate max-w-[50%]">{user?.email}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════════════════════
           MODAL — Change password
