@@ -1,13 +1,13 @@
 {
   "files": {
-    "main.css": "/smart-budget/static/css/main.ee38a004.css",
-    "main.js": "/smart-budget/static/js/main.2d285d31.js",
+    "main.css": "/smart-budget/static/css/main.80f5d3be.css",
+    "main.js": "/smart-budget/static/js/main.7a49b9ec.js",
     "index.html": "/smart-budget/index.html",
-    "main.ee38a004.css.map": "/smart-budget/static/css/main.ee38a004.css.map",
-    "main.2d285d31.js.map": "/smart-budget/static/js/main.2d285d31.js.map"
+    "main.80f5d3be.css.map": "/smart-budget/static/css/main.80f5d3be.css.map",
+    "main.7a49b9ec.js.map": "/smart-budget/static/js/main.7a49b9ec.js.map"
   },
   "entrypoints": [
-    "static/css/main.ee38a004.css",
-    "static/js/main.2d285d31.js"
+    "static/css/main.80f5d3be.css",
+    "static/js/main.7a49b9ec.js"
   ]
 }
