@@ -62,6 +62,7 @@ class User(Base):
     accounts      = relationship("Account",     back_populates="user", cascade="all, delete-orphan")
     categories    = relationship("Category",    back_populates="user", cascade="all, delete-orphan")
     mapping_rules = relationship("MappingRule", back_populates="user", cascade="all, delete-orphan")
+    api_tokens    = relationship("ApiToken",    back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email}>"
@@ -100,6 +101,7 @@ class Category(Base):
     color                       = Column(String(7),   nullable=False, default="#6366f1")
     is_income                   = Column(Boolean,     nullable=False, default=False)
     exclude_from_totals         = Column(Boolean,     nullable=False, default=False)
+    is_investment               = Column(Boolean,     nullable=False, default=False)  # shown on the Investment page
     investment_value            = Column(Numeric(14, 2), nullable=True,  default=None)
     investment_value_updated_at = Column(DateTime,       nullable=True,  default=None)
     created_at                  = Column(DateTime,    nullable=False, default=datetime.utcnow)
@@ -164,6 +166,26 @@ class MappingRule(Base):
 
     def __repr__(self) -> str:
         return f"<MappingRule id={self.id} type={self.match_type.value} pattern={self.pattern!r}>"
+
+
+class ApiToken(Base):
+    """
+    Long-lived, revocable personal access token for bots / scripts.
+    Only the SHA-256 of the token is stored; the plaintext is shown once at creation.
+    """
+    __tablename__ = "api_tokens"
+
+    id           = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id      = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name         = Column(String(100), nullable=False)
+    token_hash   = Column(String(64),  nullable=False, unique=True)
+    created_at   = Column(DateTime,    nullable=False, default=datetime.utcnow)
+    last_used_at = Column(DateTime,    nullable=True,  default=None)
+
+    user = relationship("User", back_populates="api_tokens")
+
+    def __repr__(self) -> str:
+        return f"<ApiToken id={self.id} name={self.name!r}>"
 
 
 class InvestmentSnapshot(Base):

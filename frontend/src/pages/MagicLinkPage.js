@@ -19,8 +19,8 @@ export default function MagicLinkPage() {
     }
 
     api.post("/auth/verify-magic-link", { token })
-      .then(({ data }) => {
-        loginWithToken(data.access_token);
+      .then(async ({ data }) => {
+        await loginWithToken(data.access_token);
         setStatus("success");
         // Brief pause so user sees the success state, then redirect
         setTimeout(() => navigate("/", { replace: true }), 1200);

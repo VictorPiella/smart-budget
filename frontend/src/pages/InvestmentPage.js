@@ -21,7 +21,7 @@ function fmtSnapDate(iso, snapshotYear) {
   if (!iso) return null;
   const thisYear = new Date().getFullYear();
   if (snapshotYear < thisYear) {
-    const d = new Date(`${snapshotYear}-12-31`);
+    const d = new Date(snapshotYear, 11, 31);
     return d.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
   }
   const d = new Date(iso);
@@ -52,24 +52,29 @@ export default function InvestmentPage() {
   const [savingContrib, setSavingContrib]   = useState(null); // `${catId}-${year}`
   const [saveContribErr, setSaveContribErr] = useState({});   // `${catId}-${year}` → string
 
-  // ── Restore selected investment categories when account changes ───────────
-
-  useEffect(() => {
-    if (!selectedAccount) return;
-    try {
-      const saved = JSON.parse(localStorage.getItem(lsKey(selectedAccount.id)) || "[]");
-      setSelectedIds(new Set(saved));
-    } catch {
-      setSelectedIds(new Set());
-    }
-  }, [selectedAccount]);
-
-  // ── Fetch categories ──────────────────────────────────────────────────────
+  // ── Fetch categories (the investment selection is stored server-side) ─────
 
   const fetchCategories = useCallback(async () => {
     if (!selectedAccount) return;
-    const { data } = await api.get(`/accounts/${selectedAccount.id}/categories`);
+    const accountId = selectedAccount.id;
+    let { data } = await api.get(`/accounts/${accountId}/categories`);
+
+    // One-time migration: older versions kept the selection in localStorage.
+    let legacy = [];
+    try { legacy = JSON.parse(localStorage.getItem(lsKey(accountId)) || "[]"); } catch { /* ignore */ }
+    if (legacy.length && !data.some((c) => c.is_investment)) {
+      const ids = new Set(legacy);
+      await Promise.all(
+        data.filter((c) => ids.has(c.id)).map((c) =>
+          api.patch(`/accounts/${accountId}/categories/${c.id}`, { is_investment: true })
+        )
+      );
+      data = data.map((c) => (ids.has(c.id) ? { ...c, is_investment: true } : c));
+    }
+    try { localStorage.removeItem(lsKey(accountId)); } catch { /* ignore */ }
+
     setCategories(data);
+    setSelectedIds(new Set(data.filter((c) => c.is_investment).map((c) => c.id)));
   }, [selectedAccount]);
 
   useEffect(() => { fetchCategories(); }, [fetchCategories]);
@@ -106,14 +111,15 @@ export default function InvestmentPage() {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   const toggleCat = (id) => {
-    setSelectedIds((prev) => {
+    const enable = !selectedIds.has(id);
+    const apply  = (on) => setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      if (selectedAccount) {
-        localStorage.setItem(lsKey(selectedAccount.id), JSON.stringify([...next]));
-      }
+      on ? next.add(id) : next.delete(id);
       return next;
     });
+    apply(enable);   // optimistic
+    api.patch(`/accounts/${selectedAccount.id}/categories/${id}`, { is_investment: enable })
+      .catch(() => apply(!enable));
     setDirtyInputs((prev) => {
       const next = { ...prev };
       Object.keys(next).forEach((k) => { if (k.startsWith(id)) delete next[k]; });

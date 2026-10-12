@@ -26,7 +26,12 @@ export function AccountProvider({ children }) {
       if (data.length > 0) {
         const savedId = localStorage.getItem(STORAGE_KEY);
         const restored = savedId ? data.find((a) => a.id === savedId) : null;
-        setSelectedAccount((prev) => prev ?? restored ?? data[0]);
+        // Re-resolve by id so renames / balance changes show up immediately.
+        setSelectedAccount((prev) =>
+          (prev && data.find((a) => a.id === prev.id)) ?? restored ?? data[0]
+        );
+      } else {
+        setSelectedAccount(null);
       }
     } finally {
       setLoadingAccounts(false);

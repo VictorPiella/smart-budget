@@ -3,14 +3,29 @@ import api from "../api";
 
 const AuthContext = createContext(null);
 
+// JWT payloads are base64url-encoded; atob() needs standard base64.
+function isExpired(token) {
+  try {
+    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const { exp } = JSON.parse(atob(b64));
+    return typeof exp === "number" && exp * 1000 < Date.now();
+  } catch (_) {
+    return true;
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    const email = localStorage.getItem("email");
-    if (token && email) setUser({ email });
+    if (token && !isExpired(token)) {
+      setUser({ email: localStorage.getItem("email") || "" });
+    } else if (token) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("email");
+    }
     setLoading(false);
   }, []);
 
@@ -36,16 +51,14 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const loginWithToken = (token) => {
-    // Used by MagicLinkPage after receiving a JWT from the backend.
-    // We don't know the email at this point — it will be loaded on next page visit.
+  const loginWithToken = async (token) => {
+    // Used by MagicLinkPage / VerifyEmailPage after receiving a JWT from the backend.
+    // The JWT only carries the user id, so ask the API for the email.
     localStorage.setItem("token", token);
-    // Decode the email from the JWT payload if available, otherwise use a placeholder
     try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      if (payload.email) localStorage.setItem("email", payload.email);
-    } catch (_) { /* ignore decode errors */ }
-    // Trigger a reload so AccountContext and Layout re-initialise with the new token
+      const { data } = await api.get("/auth/me");
+      localStorage.setItem("email", data.email);
+    } catch (_) { /* non-fatal: the session works without the email */ }
     setUser({ email: localStorage.getItem("email") || "" });
   };
 

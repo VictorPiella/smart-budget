@@ -44,3 +44,8 @@ postgres_data/
 # Misc
 *.log
 .cache/
+
+# Local tooling
+.claude/settings.local.json
+*.stackdump
+.pytest_cache/

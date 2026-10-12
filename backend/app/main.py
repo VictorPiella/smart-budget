@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import math
 import os
@@ -11,25 +12,26 @@ from decimal import Decimal, InvalidOperation
 from email.message import EmailMessage
 import json
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote_plus
 
 from fastapi import (
-    BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
+    BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, ValidationError, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address  # noqa: F401 (kept for reference)
 from sqlalchemy import create_engine, extract, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import (
-    Base, Account, Category, InvestmentSnapshot, MappingRule, MatchType, Transaction, User,
+    Base, Account, ApiToken, Category, InvestmentSnapshot, MappingRule, MatchType, Transaction, User,
     compute_checksum,
 )
 
@@ -39,8 +41,8 @@ from .models import (
 
 DATABASE_URL                = os.getenv("DATABASE_URL") or (
     "postgresql://{user}:{password}@{host}:{port}/{db}".format(
-        user     = os.getenv("POSTGRES_USER",     "budget_user"),
-        password = os.getenv("POSTGRES_PASSWORD", "password"),
+        user     = quote_plus(os.getenv("POSTGRES_USER", "budget_user")),
+        password = quote_plus(os.getenv("POSTGRES_PASSWORD", "password")),
         host     = os.getenv("DB_HOST",           "localhost"),
         port     = os.getenv("DB_PORT",           "5432"),
         db       = os.getenv("POSTGRES_DB",       "budget_db"),
@@ -118,6 +120,7 @@ with engine.connect() as _conn:
     # ── Investment tracker columns ────────────────────────────────────────────
     _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value NUMERIC(14,2) DEFAULT NULL"))
     _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS investment_value_updated_at TIMESTAMP DEFAULT NULL"))
+    _conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_investment BOOLEAN NOT NULL DEFAULT FALSE"))
     _conn.execute(text("ALTER TABLE investment_snapshots ALTER COLUMN value DROP NOT NULL"))
     _conn.execute(text("ALTER TABLE investment_snapshots ADD COLUMN IF NOT EXISTS manual_contribution NUMERIC(14,2) DEFAULT NULL"))
     # ── Magic-link / password-reset columns ──────────────────────────────────
@@ -245,6 +248,13 @@ def _send_verify_email(to_email: str, token: str) -> None:
     )
 
 
+API_TOKEN_PREFIX = "sb_"
+
+
+def _hash_api_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -254,6 +264,17 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if token.startswith(API_TOKEN_PREFIX):
+        api_token = db.query(ApiToken).filter(ApiToken.token_hash == _hash_api_token(token)).first()
+        if not api_token:
+            raise exc
+        now = datetime.utcnow()
+        # Throttle writes: record usage at most once per hour per token
+        if api_token.last_used_at is None or now - api_token.last_used_at > timedelta(hours=1):
+            api_token.last_used_at = now
+            db.commit()
+        return api_token.user
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
@@ -378,6 +399,7 @@ class CategoryCreate(BaseModel):
     color:               str  = "#6366f1"
     is_income:           bool = False
     exclude_from_totals: bool = False
+    is_investment:       bool = False
 
     @field_validator("color")
     @classmethod
@@ -392,6 +414,7 @@ class CategoryOut(BaseModel):
     color:                       str
     is_income:                   bool
     exclude_from_totals:         bool               = False
+    is_investment:               bool               = False
     investment_value:            Optional[float]    = None
     investment_value_updated_at: Optional[datetime] = None
     class Config:
@@ -402,6 +425,7 @@ class CategoryUpdate(BaseModel):
     color:               Optional[str]   = None
     is_income:           Optional[bool]  = None
     exclude_from_totals: Optional[bool]  = None
+    is_investment:       Optional[bool]  = None
     investment_value:    Optional[float] = None
 
     @field_validator("color")
@@ -413,7 +437,7 @@ class CategoryUpdate(BaseModel):
 
 class MappingRuleCreate(BaseModel):
     category_id: uuid.UUID
-    pattern:     str = Field(..., min_length=1, max_length=500)
+    pattern:     str = Field(..., min_length=1, max_length=255)
     match_type:  MatchType
     priority:    int = Field(0, ge=0, le=1000)
 
@@ -428,9 +452,9 @@ class MappingRuleOut(BaseModel):
 
 class MappingRuleUpdate(BaseModel):
     category_id: Optional[uuid.UUID] = None
-    pattern:     Optional[str]       = Field(None, min_length=1, max_length=500)
+    pattern:     Optional[str]       = Field(None, min_length=1, max_length=255)
     match_type:  Optional[MatchType] = None
-    priority:    Optional[int]       = None
+    priority:    Optional[int]       = Field(None, ge=0, le=1000)
 
 class TransactionOut(BaseModel):
     id:              uuid.UUID
@@ -445,7 +469,7 @@ class TransactionOut(BaseModel):
 
 class TransactionUpdate(BaseModel):
     date:            Optional[_Date]     = None
-    raw_description: Optional[str]       = None
+    raw_description: Optional[str]       = Field(None, min_length=1)
     amount:          Optional[Decimal]   = None
     category_id:     Optional[uuid.UUID] = None
     is_manual:       Optional[bool]      = None
@@ -465,7 +489,7 @@ class ImportResult(BaseModel):
 
 class AutoImportRow(BaseModel):
     date:        date
-    description: str
+    description: str = Field(..., min_length=1)
     amount:      Decimal
 
 class AutoImportRequest(BaseModel):
@@ -553,21 +577,47 @@ def _parse_date(raw: str) -> Optional[date]:
 
 
 def _parse_amount(raw: str) -> Optional[Decimal]:
-    clean = raw.strip().replace(" ", "")
-    if clean.count(",") == 1 and clean.count(".") == 0:
-        clean = clean.replace(",", ".")
-    elif clean.count(",") >= 1 and clean.count(".") >= 1:
-        if clean.rindex(".") > clean.rindex(","):
-            clean = clean.replace(",", "")
+    """
+    Parse a bank-statement amount. Handles:
+      - EU / US separators: "1.234,56", "1,234.56", "1.234.567"
+      - accounting negatives "(12.50)", trailing minus "12.50-", unicode minus
+      - currency symbols / spaces: "€ -3,00"
+    A single comma with no dots is treated as the decimal separator ("10,50").
+    """
+    s = raw.strip().replace("−", "-")
+    negative = s.startswith("(") and s.endswith(")")
+    s = "".join(c for c in s if c.isdigit() or c in ".,-")
+    if s.endswith("-"):
+        negative, s = True, s[:-1]
+    if s.startswith("-"):
+        negative, s = True, s[1:]
+    if not s or "-" in s:
+        return None
+
+    if "," in s and "." in s:
+        # Whichever separator appears last is the decimal one
+        if s.rindex(".") > s.rindex(","):
+            s = s.replace(",", "")
         else:
-            clean = clean.replace(".", "").replace(",", ".")
-    else:
-        clean = clean.replace(",", "")
-    clean = "".join(c for c in clean if c.isdigit() or c in ".-")
+            s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".") if s.count(",") == 1 else s.replace(",", "")
+    elif s.count(".") > 1:
+        s = s.replace(".", "")
+
     try:
-        return Decimal(clean)
+        value = Decimal(s)
     except InvalidOperation:
         return None
+    return -value if negative else value
+
+
+def _decode_upload(raw_bytes: bytes) -> str:
+    """Decode an uploaded CSV. Many (especially Spanish) banks export Windows-1252."""
+    try:
+        return raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw_bytes.decode("cp1252", errors="replace")
 
 
 def _read_csv(content: str):
@@ -861,8 +911,83 @@ def verify_email(
 class DeleteAccountRequest(BaseModel):
     password: str
 
+# ---------------------------------------------------------------------------
+# API tokens  (long-lived, revocable credentials for bots / scripts)
+# ---------------------------------------------------------------------------
+
+MAX_API_TOKENS_PER_USER = 20
+
+class ApiTokenCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+class ApiTokenOut(BaseModel):
+    id:           uuid.UUID
+    name:         str
+    created_at:   datetime
+    last_used_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+
+class ApiTokenCreated(ApiTokenOut):
+    token: str   # plaintext — returned only once, at creation
+
+
+@app.post("/auth/api-tokens", response_model=ApiTokenCreated, status_code=201, tags=["Auth"])
+def create_api_token(
+    payload:      ApiTokenCreate,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    count = db.query(func.count(ApiToken.id)).filter(ApiToken.user_id == current_user.id).scalar()
+    if count >= MAX_API_TOKENS_PER_USER:
+        raise HTTPException(status_code=409, detail="Too many API tokens. Revoke an old one first.")
+    plaintext = API_TOKEN_PREFIX + secrets.token_urlsafe(32)
+    api_token = ApiToken(user_id=current_user.id, name=payload.name, token_hash=_hash_api_token(plaintext))
+    db.add(api_token)
+    db.commit()
+    db.refresh(api_token)
+    return ApiTokenCreated(
+        id=api_token.id, name=api_token.name, created_at=api_token.created_at,
+        last_used_at=api_token.last_used_at, token=plaintext,
+    )
+
+
+@app.get("/auth/api-tokens", response_model=List[ApiTokenOut], tags=["Auth"])
+def list_api_tokens(
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    return (
+        db.query(ApiToken)
+        .filter(ApiToken.user_id == current_user.id)
+        .order_by(ApiToken.created_at.desc())
+        .all()
+    )
+
+
+@app.delete("/auth/api-tokens/{token_id}", status_code=204, tags=["Auth"])
+def revoke_api_token(
+    token_id:     uuid.UUID,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    api_token = db.query(ApiToken).filter(
+        ApiToken.id      == token_id,
+        ApiToken.user_id == current_user.id,
+    ).first()
+    if not api_token:
+        raise HTTPException(status_code=404, detail="Token not found.")
+    db.delete(api_token)
+    db.commit()
+
+
+@app.get("/auth/me", response_model=UserOut, tags=["Auth"])
+def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
 @app.delete("/auth/me", status_code=204, tags=["Auth"])
-def delete_account(
+def delete_me(
     payload:      DeleteAccountRequest,
     db:           Session = Depends(get_db),
     current_user: User    = Depends(get_current_user),
@@ -870,7 +995,8 @@ def delete_account(
     """Permanently delete the authenticated user and all their data (GDPR right to erasure).
     Requires password confirmation to prevent accidental or session-hijack deletions."""
     if not _verify_password(payload.password, current_user.password_hash):
-        raise HTTPException(status_code=401, detail="Incorrect password.")
+        # 400, not 401: the frontend treats any 401 as "session expired" and logs out.
+        raise HTTPException(status_code=400, detail="Incorrect password.")
     db.delete(current_user)
     db.commit()
 
@@ -944,7 +1070,12 @@ def update_account(
     ).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
-    if payload.name is not None:
+    if payload.name is not None and payload.name != account.name:
+        if db.query(Account).filter(
+            Account.user_id == current_user.id,
+            Account.name    == payload.name,
+        ).first():
+            raise HTTPException(status_code=409, detail="An account with this name already exists.")
         account.name = payload.name
     if payload.currency is not None:
         account.currency = payload.currency.upper()
@@ -998,6 +1129,7 @@ def create_category(
         color               = payload.color,
         is_income           = payload.is_income,
         exclude_from_totals = payload.exclude_from_totals,
+        is_investment       = payload.is_investment,
     )
     db.add(cat)
     db.commit()
@@ -1040,7 +1172,12 @@ def update_category(
     ).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found.")
-    if payload.name is not None:
+    if payload.name is not None and payload.name != cat.name:
+        if db.query(Category).filter(
+            Category.account_id == account_id,
+            Category.name       == payload.name,
+        ).first():
+            raise HTTPException(status_code=409, detail="Category already exists.")
         cat.name = payload.name
     if payload.color is not None:
         cat.color = payload.color
@@ -1048,6 +1185,8 @@ def update_category(
         cat.is_income = payload.is_income
     if payload.exclude_from_totals is not None:
         cat.exclude_from_totals = payload.exclude_from_totals
+    if payload.is_investment is not None:
+        cat.is_investment = payload.is_investment
     if payload.investment_value is not None:
         cat.investment_value            = payload.investment_value
         cat.investment_value_updated_at = datetime.utcnow()
@@ -1171,6 +1310,11 @@ def upsert_investment_snapshot(
 ):
     """Create or update the market value snapshot and/or manual contribution for a category + year."""
     _verify_account(account_id, current_user, db)
+    if not db.query(Category.id).filter(
+        Category.id         == payload.category_id,
+        Category.account_id == account_id,
+    ).first():
+        raise HTTPException(status_code=404, detail="Category not found.")
     if payload.value is None and payload.manual_contribution is None:
         raise HTTPException(status_code=422, detail="At least one of value or manual_contribution must be provided.")
     now = datetime.utcnow()
@@ -1435,8 +1579,8 @@ def list_transactions(
     year:          Optional[int]  = None,
     month:         Optional[int]  = None,
     unmapped_only: bool           = False,
-    page:          Optional[int]  = None,   # when provided → paginate + set headers
-    per_page:      int            = 50,
+    page:          Optional[int]  = Query(None, ge=1),   # when provided → paginate + set headers
+    per_page:      int            = Query(50, ge=1, le=200),
     response:      Response       = None,
     db:            Session        = Depends(get_db),
     current_user:  User           = Depends(get_current_user),
@@ -1462,7 +1606,6 @@ def list_transactions(
     # Optional server-side pagination — only activated when ?page= is supplied.
     # Callers that omit ?page (e.g. InboxPage) get the full list unchanged.
     if page is not None:
-        per_page = max(1, min(per_page, 200))      # clamp to 1-200
         total    = q.count()
         pages    = math.ceil(total / per_page) if per_page else 1
         if response is not None:
@@ -1527,7 +1670,11 @@ def update_transaction(
     if recompute:
         txn.checksum = compute_checksum(str(txn.date), str(txn.amount), txn.raw_description)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An identical transaction (same date, amount and description) already exists.")
     db.refresh(txn)
     return txn
 
@@ -1673,6 +1820,51 @@ def get_yearly_summary(
 # Import Endpoints
 # ---------------------------------------------------------------------------
 
+def _load_rules(db: Session, account_id: uuid.UUID) -> List[MappingRule]:
+    return (
+        db.query(MappingRule)
+        .filter(MappingRule.account_id == account_id)
+        .order_by(MappingRule.priority.desc())
+        .all()
+    )
+
+
+def _insert_transactions(
+    db:         Session,
+    account_id: uuid.UUID,
+    rows:       List[dict],
+) -> tuple:
+    """
+    Shared import pipeline: dedup by checksum (against the DB *and* within the
+    batch), run the mapping engine, and add new rows to the session.
+    Each row is {'date', 'description', 'amount'}. Returns (new_transactions, skipped).
+    Caller commits.
+    """
+    rules = _load_rules(db, account_id)
+    seen  = {
+        c for (c,) in db.query(Transaction.checksum).filter(Transaction.account_id == account_id)
+    }
+    new_transactions: List[Transaction] = []
+    skipped = 0
+    for row in rows:
+        checksum = compute_checksum(str(row["date"]), str(row["amount"]), row["description"])
+        if checksum in seen:
+            skipped += 1
+            continue
+        seen.add(checksum)
+        txn = Transaction(
+            account_id      = account_id,
+            date            = row["date"],
+            raw_description = row["description"],
+            amount          = row["amount"],
+            category_id     = apply_mapping_rules(row["description"], rules),
+            checksum        = checksum,
+        )
+        db.add(txn)
+        new_transactions.append(txn)
+    return new_transactions, skipped
+
+
 @app.post(
     "/accounts/{account_id}/import/preview",
     response_model=ImportPreview,
@@ -1697,7 +1889,7 @@ async def preview_import(
         raw_bytes = await file.read()
         if len(raw_bytes) > MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="File too large. Maximum is 20 MB.")
-        content = raw_bytes.decode("utf-8-sig")
+        content = _decode_upload(raw_bytes)
     elif raw_csv:
         content = raw_csv
     else:
@@ -1745,7 +1937,7 @@ async def import_transactions(
         raw_bytes = await file.read()
         if len(raw_bytes) > MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="File too large. Maximum is 20 MB.")
-        content = raw_bytes.decode("utf-8-sig")
+        content = _decode_upload(raw_bytes)
     elif raw_csv:
         content = raw_csv
     else:
@@ -1754,7 +1946,12 @@ async def import_transactions(
             detail="Provide either a CSV file (multipart) or raw_csv (form field).",
         )
 
-    extra_cols: List[str] = json.loads(col_extra_desc) if col_extra_desc else []
+    try:
+        extra_cols = json.loads(col_extra_desc) if col_extra_desc else []
+    except json.JSONDecodeError:
+        extra_cols = None
+    if not isinstance(extra_cols, list) or not all(isinstance(c, str) for c in extra_cols):
+        raise HTTPException(status_code=422, detail="col_extra_desc must be a JSON array of column names.")
     rows = parse_csv_content(
         content,
         date_col        = col_date   or None,
@@ -1765,47 +1962,7 @@ async def import_transactions(
     if len(rows) > 50_000:
         raise HTTPException(status_code=413, detail="Too many transactions. Maximum is 50,000 rows per import.")
 
-    rules: List[MappingRule] = (
-        db.query(MappingRule)
-        .filter(MappingRule.account_id == account_id)
-        .order_by(MappingRule.priority.desc())
-        .all()
-    )
-
-    new_transactions: List[Transaction] = []
-    skipped = 0
-
-    for row in rows:
-        checksum = compute_checksum(
-            str(row["date"]),
-            str(row["amount"]),
-            row["description"],
-        )
-
-        duplicate = (
-            db.query(Transaction)
-            .filter(
-                Transaction.account_id == account_id,
-                Transaction.checksum   == checksum,
-            )
-            .first()
-        )
-        if duplicate:
-            skipped += 1
-            continue
-
-        category_id = apply_mapping_rules(row["description"], rules)
-
-        txn = Transaction(
-            account_id      = account_id,
-            date            = row["date"],
-            raw_description = row["description"],
-            amount          = row["amount"],
-            category_id     = category_id,
-            checksum        = checksum,
-        )
-        db.add(txn)
-        new_transactions.append(txn)
+    new_transactions, skipped = _insert_transactions(db, account_id, rows)
 
     db.commit()
     for txn in new_transactions:
@@ -1848,47 +2005,13 @@ def auto_import(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
 
-    rules: List[MappingRule] = (
-        db.query(MappingRule)
-        .filter(MappingRule.account_id == account_id)
-        .order_by(MappingRule.priority.desc())
-        .all()
-    )
-
-    new_transactions: List[Transaction] = []
-    skipped = 0
-    seen_checksums: set = set()  # dedup within this batch before hitting the DB
-
-    for row in payload.transactions:
-        checksum = compute_checksum(str(row.date), str(row.amount), row.description)
-
-        # Skip if already seen in this batch (same date+amount+desc sent twice)
-        if checksum in seen_checksums:
-            skipped += 1
-            continue
-
-        # Skip if already persisted in the DB
-        if db.query(Transaction).filter(
-            Transaction.account_id == account_id,
-            Transaction.checksum   == checksum,
-        ).first():
-            skipped += 1
-            continue
-
-        seen_checksums.add(checksum)
-
-        category_id = apply_mapping_rules(row.description, rules)
-
-        txn = Transaction(
-            account_id      = account_id,
-            date            = row.date,
-            raw_description = row.description,
-            amount          = row.amount,
-            category_id     = category_id,
-            checksum        = checksum,
-        )
-        db.add(txn)
-        new_transactions.append(txn)
+    if len(payload.transactions) > 50_000:
+        raise HTTPException(status_code=413, detail="Too many transactions. Maximum is 50,000 rows per import.")
+    rows = [
+        {"date": t.date, "description": t.description.strip(), "amount": t.amount}
+        for t in payload.transactions
+    ]
+    new_transactions, skipped = _insert_transactions(db, account_id, rows)
 
     db.commit()
     for txn in new_transactions:
@@ -1913,12 +2036,7 @@ def _do_remap(account_id: uuid.UUID) -> None:
     """
     db = SessionLocal()
     try:
-        rules: List[MappingRule] = (
-            db.query(MappingRule)
-            .filter(MappingRule.account_id == account_id)
-            .order_by(MappingRule.priority.desc())
-            .all()
-        )
+        rules = _load_rules(db, account_id)
         txns = (
             db.query(Transaction)
             .filter(
@@ -1967,6 +2085,52 @@ def remap_account(
 # Data Export / Import  (full backup & restore)
 # ---------------------------------------------------------------------------
 
+class BackupCategory(BaseModel):
+    name:                str             = Field(..., min_length=1, max_length=100)
+    color:               str             = "#6366f1"
+    is_income:           bool            = False
+    exclude_from_totals: bool            = False
+    is_investment:       bool            = False
+    investment_value:    Optional[float] = None
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, v: str) -> str:
+        return v.lower() if _HEX_COLOR_RE.match(v) else "#6366f1"
+
+class BackupRule(BaseModel):
+    category_name: str       = ""
+    pattern:       str       = Field(..., min_length=1, max_length=255)
+    match_type:    MatchType
+    priority:      int       = Field(0, ge=0, le=1000)
+
+class BackupTransaction(BaseModel):
+    date:          _Date
+    description:   str           = Field(..., min_length=1)
+    amount:        Decimal
+    category_name: str           = ""
+    is_manual:     bool          = False
+    checksum:      Optional[str] = Field(None, pattern=r"^[0-9a-f]{64}$")
+
+class BackupSnapshot(BaseModel):
+    category_name:       str             = ""
+    year:                int             = Field(..., ge=1900, le=2200)
+    value:               Optional[float] = None
+    manual_contribution: Optional[float] = None
+
+class BackupAccount(BaseModel):
+    name:                 str = Field(..., min_length=1, max_length=100)
+    currency:             str = Field(..., pattern=r"^[A-Z]{3}$")
+    categories:           List[BackupCategory]    = []
+    rules:                List[BackupRule]        = []
+    transactions:         List[BackupTransaction] = []
+    investment_snapshots: List[BackupSnapshot]    = []
+
+class BackupFile(BaseModel):
+    version:  int = Field(..., ge=1, le=1)
+    accounts: List[BackupAccount] = []
+
+
 @app.get("/data/export", tags=["Data"], summary="Download a full JSON backup of all user data")
 def export_data(
     db:           Session = Depends(get_db),
@@ -2001,6 +2165,8 @@ def export_data(
                     "name":                        c.name,
                     "color":                       c.color,
                     "is_income":                   c.is_income,
+                    "exclude_from_totals":         c.exclude_from_totals,
+                    "is_investment":               c.is_investment,
                     "investment_value":            float(c.investment_value) if c.investment_value is not None else None,
                     "investment_value_updated_at": c.investment_value_updated_at.isoformat() if c.investment_value_updated_at else None,
                 }
@@ -2022,6 +2188,7 @@ def export_data(
                     "amount":        float(t.amount),
                     "category_name": cat_id_to_name.get(str(t.category_id), "") if t.category_id else "",
                     "is_manual":     t.is_manual,
+                    "checksum":      t.checksum,
                 }
                 for t in txns
             ],
@@ -2064,139 +2231,147 @@ async def import_data(
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File too large. Maximum is 20 MB.")
     try:
-        data = json.loads(raw)
+        backup = BackupFile.model_validate(json.loads(raw))
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="Invalid JSON file.")
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=json.loads(exc.json(include_url=False, include_input=False)))
 
-    if data.get("version") != 1:
-        raise HTTPException(status_code=422, detail="Unsupported backup version.")
-
-    total_txns = sum(len(acct.get("transactions", [])) for acct in data.get("accounts", []))
+    total_txns = sum(len(acct.transactions) for acct in backup.accounts)
     if total_txns > 50_000:
         raise HTTPException(status_code=413, detail="Too many transactions. Maximum is 50,000 rows per import.")
 
     stats = {
-        "accounts_created":     0,
-        "categories_created":   0,
+        "accounts_created":      0,
+        "categories_created":    0,
         "transactions_imported": 0,
         "transactions_skipped":  0,
-        "rules_created":        0,
-        "snapshots_upserted":   0,
+        "rules_created":         0,
+        "snapshots_upserted":    0,
     }
 
-    for acc_data in data.get("accounts", []):
+    for acc_data in backup.accounts:
         # ── Account ──────────────────────────────────────────────────────────
         acc = db.query(Account).filter(
             Account.user_id  == current_user.id,
-            Account.name     == acc_data["name"],
-            Account.currency == acc_data["currency"],
+            Account.name     == acc_data.name,
+            Account.currency == acc_data.currency,
         ).first()
         if not acc:
-            acc = Account(
-                user_id  = current_user.id,
-                name     = acc_data["name"],
-                currency = acc_data["currency"],
-            )
+            if db.query(Account.id).filter(
+                Account.user_id == current_user.id,
+                Account.name    == acc_data.name,
+            ).first():
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Account '{acc_data.name}' already exists with a different currency.",
+                )
+            acc = Account(user_id=current_user.id, name=acc_data.name, currency=acc_data.currency)
             db.add(acc)
             db.flush()
             stats["accounts_created"] += 1
 
         # ── Categories ────────────────────────────────────────────────────────
-        name_to_cat_id: Dict[str, uuid.UUID] = {}
-        for cat_data in acc_data.get("categories", []):
-            cat = db.query(Category).filter(
-                Category.account_id == acc.id,
-                Category.name       == cat_data["name"],
-            ).first()
-            if not cat:
-                cat = Category(
-                    user_id    = current_user.id,
-                    account_id = acc.id,
-                    name       = cat_data["name"],
-                    color      = cat_data.get("color", "#6366f1"),
-                    is_income  = cat_data.get("is_income", False),
-                )
-                db.add(cat)
-                db.flush()
-                stats["categories_created"] += 1
+        name_to_cat_id: Dict[str, uuid.UUID] = {
+            c.name: c.id for c in db.query(Category).filter(Category.account_id == acc.id)
+        }
+        for cat_data in acc_data.categories:
+            if cat_data.name in name_to_cat_id:
+                continue
+            cat = Category(
+                user_id             = current_user.id,
+                account_id          = acc.id,
+                name                = cat_data.name,
+                color               = cat_data.color,
+                is_income           = cat_data.is_income,
+                exclude_from_totals = cat_data.exclude_from_totals,
+                is_investment       = cat_data.is_investment,
+                investment_value    = cat_data.investment_value,
+            )
+            db.add(cat)
+            db.flush()
             name_to_cat_id[cat.name] = cat.id
+            stats["categories_created"] += 1
 
         # ── Mapping rules ─────────────────────────────────────────────────────
         existing_rules = {
-            (str(r.category_id), r.pattern, r.match_type.value)
-            for r in db.query(MappingRule).filter(MappingRule.account_id == acc.id).all()
+            (str(r.category_id), r.pattern, r.match_type)
+            for r in db.query(MappingRule).filter(MappingRule.account_id == acc.id)
         }
-        for rule_data in acc_data.get("rules", []):
-            cat_id = name_to_cat_id.get(rule_data.get("category_name", ""))
+        for rule_data in acc_data.rules:
+            cat_id = name_to_cat_id.get(rule_data.category_name)
             if not cat_id:
                 continue
-            key = (str(cat_id), rule_data["pattern"], rule_data["match_type"])
-            if key not in existing_rules:
-                db.add(MappingRule(
-                    user_id     = current_user.id,
-                    account_id  = acc.id,
-                    category_id = cat_id,
-                    pattern     = rule_data["pattern"],
-                    match_type  = MatchType(rule_data["match_type"]),
-                    priority    = rule_data.get("priority", 0),
-                ))
-                existing_rules.add(key)
-                stats["rules_created"] += 1
+            key = (str(cat_id), rule_data.pattern, rule_data.match_type)
+            if key in existing_rules:
+                continue
+            db.add(MappingRule(
+                user_id     = current_user.id,
+                account_id  = acc.id,
+                category_id = cat_id,
+                pattern     = rule_data.pattern,
+                match_type  = rule_data.match_type,
+                priority    = rule_data.priority,
+            ))
+            existing_rules.add(key)
+            stats["rules_created"] += 1
 
         # ── Transactions ──────────────────────────────────────────────────────
-        for txn_data in acc_data.get("transactions", []):
-            checksum = compute_checksum(
-                txn_data["date"], str(txn_data["amount"]), txn_data["description"]
-            )
-            exists = db.query(Transaction.id).filter(
-                Transaction.account_id == acc.id,
-                Transaction.checksum   == checksum,
-            ).first()
-            if exists:
+        # Older backups carry no checksum and store amounts as floats (-2.5 for
+        # an original "-2.50"), so check both spellings against existing rows.
+        seen = {c for (c,) in db.query(Transaction.checksum).filter(Transaction.account_id == acc.id)}
+        for txn_data in acc_data.transactions:
+            amount     = txn_data.amount.quantize(Decimal("0.01"))
+            checksum   = txn_data.checksum or compute_checksum(str(txn_data.date), str(amount), txn_data.description)
+            candidates = {
+                checksum,
+                compute_checksum(str(txn_data.date), str(amount),          txn_data.description),
+                compute_checksum(str(txn_data.date), str(txn_data.amount), txn_data.description),
+            }
+            if candidates & seen:
                 stats["transactions_skipped"] += 1
                 continue
-            cat_id = name_to_cat_id.get(txn_data.get("category_name", ""))
+            seen |= candidates
             db.add(Transaction(
                 account_id      = acc.id,
-                date            = date.fromisoformat(txn_data["date"]),
-                raw_description = txn_data["description"],
-                amount          = Decimal(str(txn_data["amount"])),
-                category_id     = cat_id,
-                is_manual       = txn_data.get("is_manual", False),
+                date            = txn_data.date,
+                raw_description = txn_data.description,
+                amount          = amount,
+                category_id     = name_to_cat_id.get(txn_data.category_name),
+                is_manual       = txn_data.is_manual,
                 checksum        = checksum,
             ))
             stats["transactions_imported"] += 1
 
         # ── Investment snapshots ──────────────────────────────────────────────
-        for snap_data in acc_data.get("investment_snapshots", []):
-            cat_id = name_to_cat_id.get(snap_data.get("category_name", ""))
+        for snap_data in acc_data.investment_snapshots:
+            cat_id = name_to_cat_id.get(snap_data.category_name)
             if not cat_id:
                 continue
-            snap_value   = snap_data.get("value")
-            manual_contr = snap_data.get("manual_contribution")
+            now  = datetime.utcnow()
             stmt = (
                 pg_insert(InvestmentSnapshot)
                 .values(
                     id=uuid.uuid4(),
                     account_id=acc.id,
                     category_id=cat_id,
-                    year=snap_data["year"],
-                    value=snap_value,
-                    manual_contribution=manual_contr,
-                    updated_at=datetime.utcnow(),
+                    year=snap_data.year,
+                    value=snap_data.value,
+                    manual_contribution=snap_data.manual_contribution,
+                    updated_at=now,
                 )
                 .on_conflict_do_update(
                     constraint="uq_investment_snapshot",
                     set_={
-                        "value":               snap_value,
-                        "manual_contribution": manual_contr,
-                        "updated_at":          datetime.utcnow(),
+                        "value":               snap_data.value,
+                        "manual_contribution": snap_data.manual_contribution,
+                        "updated_at":          now,
                     },
                 )
             )
             db.execute(stmt)
             stats["snapshots_upserted"] += 1
 
-        db.commit()
-
+    # Single commit: a failure part-way through leaves the user's data untouched.
+    db.commit()
     return stats

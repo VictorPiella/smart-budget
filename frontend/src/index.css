@@ -5,6 +5,18 @@
 /* ── Base ────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
+/* Native controls (select popups, date pickers) follow the dark theme.
+   Without this, Windows renders the <select> popup white while the options
+   inherit the light text colour — unreadable. */
+:root { color-scheme: dark; }
+
+select option,
+select optgroup {
+  background-color: #0d0d1a;
+  color: #e2e8f0;
+}
+select option:disabled { color: #64748b; }
+
 body {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
   background-color: #040408;

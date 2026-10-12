@@ -19,8 +19,8 @@ export default function VerifyEmailPage() {
     }
 
     api.post("/auth/verify-email", { token })
-      .then(({ data }) => {
-        loginWithToken(data.access_token);
+      .then(async ({ data }) => {
+        await loginWithToken(data.access_token);
         setStatus("success");
         setTimeout(() => navigate("/", { replace: true }), 1500);
       })

@@ -3,6 +3,8 @@
 #
 # Usage:
 #   docker compose -f docker-compose.prod.yml up -d
+#
+# HTTPS: set DOMAIN in .env and run `sudo ./setup-https.sh <domain> <email>` once.
 
 services:
   app:
@@ -11,23 +13,39 @@ services:
     restart: always
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-budget_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # Leave blank to auto-generate one (persisted in the postgres_data volume)
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
       - POSTGRES_DB=${POSTGRES_DB:-budget_db}
-      - SECRET_KEY=${SECRET_KEY}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost}
+      # HTTPS is enabled automatically when a certificate for DOMAIN is in ./letsencrypt
+      - DOMAIN=${DOMAIN:-}
+      # Magic link / email verification
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - APP_URL=${APP_URL:-http://localhost}
       # Telegram bot — leave BOT_TOKEN blank to disable the bot entirely
       - BOT_TOKEN=${BOT_TOKEN:-}
-      # S3 backups — leave blank to keep backups local only
+      - ALLOWED_TELEGRAM_USERS=${ALLOWED_TELEGRAM_USERS:-}
+      # S3 backups — leave blank to keep backups local only (./backups on the host)
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
       - S3_BACKUP_BUCKET=${S3_BACKUP_BUCKET:-}
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - uploads:/uploads        # persists PDF uploads + bot sessions (sessions.json lives here)
-      - model_cache:/root/.cache # persists docling/HuggingFace model downloads (~1 GB, one-time)
+      - uploads:/uploads                      # bot sessions (API tokens only) + temporary PDF uploads
+      - model_cache:/home/app/.cache          # docling/HuggingFace model downloads (~1 GB, one-time)
+      # Host bind mounts: survive container re-creation on every deploy
+      - ./backups:/var/backups/smartbudget    # nightly pg_dump files (7 days)
+      - ./letsencrypt:/etc/letsencrypt:ro     # certificates (managed by certbot on the host)
+      - ./certbot-www:/var/www/certbot:ro     # ACME challenge files (certbot --webroot)
 
 volumes:
   postgres_data:

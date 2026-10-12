@@ -112,17 +112,19 @@ docker compose up --build
 | `DOCKER_TOKEN` | Docker Hub Personal Access Token (Read, Write, Delete) |
 | `PROD_HOST` | Your server's IP or hostname |
 | `PROD_SSH_KEY` | Private SSH key for your server |
+| `PROD_SSH_FINGERPRINT` | SHA256 host key fingerprint: `ssh-keyscan -t ed25519 <host> \| ssh-keygen -lf -` |
 | `DEPLOY_ENABLED` | Repository **variable** set to `true` to enable auto-deploy |
 
 ### CI/CD Flow
 
-Every push to `master` triggers three parallel jobs:
+Every push to `master` triggers:
 
 ```
 push to master
-├── build-and-push  →  Docker Hub  (smart-budget:latest + :sha)
-├── deploy-pages    →  GitHub Pages (landing page, REACT_APP_GH_PAGES=true)
-└── deploy          →  SSH into server, docker compose pull && up -d  [if DEPLOY_ENABLED=true]
+├── test            →  pytest against a Postgres service container
+│   └── build-and-push  →  Docker Hub  (smart-budget:latest + :sha)
+│       └── deploy      →  copy docker-compose.prod.yml, docker compose pull && up -d  [if DEPLOY_ENABLED=true]
+└── deploy-pages    →  GitHub Pages (landing page, REACT_APP_GH_PAGES=true)
 ```
 
 ### Deploy on your server
@@ -140,6 +142,17 @@ nano .env   # Fill in all values — no defaults in prod!
 # Pull and start
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
+
+# Optional: HTTPS via Let's Encrypt (no downtime, auto-renews)
+sudo ./setup-https.sh budget.example.com you@example.com
+```
+
+**Data on the host** (next to `docker-compose.prod.yml`), so it survives every redeploy:
+`./backups/` nightly `pg_dump` (7 days) · `./letsencrypt/` certificates · `./certbot-www/` ACME challenges.
+
+**Restore a backup:**
+```bash
+gunzip -c backups/smartbudget-<date>.sql.gz | docker exec -i -u postgres budget_app psql -d budget_db
 ```
 
 ### Environment variables
@@ -147,7 +160,7 @@ docker compose -f docker-compose.prod.yml up -d
 | Variable | Description |
 |----------|-------------|
 | `POSTGRES_USER` | Database username |
-| `POSTGRES_PASSWORD` | Database password — use a strong random value |
+| `POSTGRES_PASSWORD` | Database password — blank = auto-generated and stored in the data volume |
 | `POSTGRES_DB` | Database name |
 | `SECRET_KEY` | JWT signing key — `openssl rand -hex 32` |
 | `ALLOWED_ORIGINS` | Comma-separated allowed CORS origins (e.g. `https://yourdomain.com`) |
@@ -157,6 +170,9 @@ docker compose -f docker-compose.prod.yml up -d
 | `SMTP_PASS` | SMTP password |
 | `SMTP_FROM` | From address for outbound emails |
 | `APP_URL` | Public URL of your app (used in email links) |
+| `DOMAIN` | Public domain; HTTPS turns on when its certificate is in `./letsencrypt` |
+| `BOT_TOKEN` | Telegram bot token (blank = bot disabled) |
+| `ALLOWED_TELEGRAM_USERS` | Comma-separated Telegram user IDs allowed to use the bot |
 
 ---
 
@@ -180,8 +196,8 @@ smart-budget/
 │   ├── app/
 │   │   ├── main.py          # FastAPI routes + startup migrations + mapping engine
 │   │   └── models.py        # SQLAlchemy models
-│   ├── Dockerfile           # Dev image (uvicorn --reload)
-│   └── Dockerfile.prod      # Production image (uvicorn, 2 workers)
+│   ├── tests/               # pytest suite (runs against a throwaway Postgres)
+│   └── Dockerfile           # Dev image (uvicorn --reload)
 ├── frontend/
 │   ├── public/
 │   │   ├── index.html       # SPA entry + GitHub Pages redirect handler
@@ -203,14 +219,18 @@ smart-budget/
 │           ├── InvestmentPage.js   # Portfolio tracker + year-over-year table
 │           └── SettingsPage.js     # Profile + account deletion
 ├── nginx/
-│   ├── nginx.conf           # Dev proxy config
-│   └── nginx.prod.conf      # Production SPA config
+│   ├── nginx.conf                # Dev proxy config
+│   ├── nginx.combined.conf       # Prod (combined image), HTTP only
+│   ├── nginx.combined-tls.conf   # Prod HTTPS template (used when a cert is present)
+│   └── smartbudget-common.conf   # Headers + SPA + /api proxy shared by both
 ├── docs/
 │   └── screenshots/         # README screenshots (add your own)
 ├── .github/workflows/
 │   └── docker-publish.yml   # CI: Docker Hub + GitHub Pages on push to master
 ├── docker-compose.yml        # Development stack
 ├── docker-compose.prod.yml   # Production stack
+├── Dockerfile.prod           # Combined prod image (postgres + nginx + API + bot)
+├── setup-https.sh            # One-time Let's Encrypt setup on the server
 └── .env.example              # Environment variable template
 ```
 
@@ -284,11 +304,19 @@ PUT /api/accounts/{id}/investment-snapshots                # Save year-end value
 Push transactions programmatically from PDF parsers, bank scrapers, or any external script.
 
 ```bash
-# 1. Get a token
+# 1. Get a short-lived JWT (8 h) …
 curl -X POST https://your-server/api/auth/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=you@example.com&password=yourpassword"
 # → { "access_token": "eyJ..." }
+
+# … and exchange it once for a long-lived, revocable API token, so your
+# script never needs to store your password:
+curl -X POST https://your-server/api/auth/api-tokens \
+  -H "Authorization: Bearer eyJ..." -H "Content-Type: application/json" \
+  -d '{"name": "my-pdf-bot"}'
+# → { "id": "uuid", "token": "sb_..." }   (shown only once; use it as the Bearer token)
+# List: GET /api/auth/api-tokens · Revoke: DELETE /api/auth/api-tokens/{id}
 
 # 2. Find your account ID
 curl https://your-server/api/accounts \
@@ -333,7 +361,7 @@ curl -X POST https://your-server/api/accounts/{id}/import/auto \
 | Control | Implementation |
 |---------|---------------|
 | Passwords | bcrypt hashing via passlib |
-| Tokens | JWT (HS256), 8 h expiry |
+| Tokens | JWT (HS256), 8 h expiry · bots use revocable API tokens (only SHA-256 stored) |
 | Login timing | Dummy bcrypt hash run even when email not found — prevents user enumeration |
 | Rate limiting | slowapi: 5/min on login, register, magic-link/forgot |
 | Input validation | Pydantic v2 — hex color regex, max-length on names/patterns, currency format |
@@ -341,8 +369,9 @@ curl -X POST https://your-server/api/accounts/{id}/import/auto \
 | CORS | Configurable `ALLOWED_ORIGINS`; credentials allowed only for listed origins |
 | Security headers | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `CSP` via nginx |
 | Email | Verification required before first login; magic-link tokens are single-use with 1 h expiry |
+| Processes | uvicorn and the Telegram bot run as an unprivileged `app` user; Postgres requires scram-sha-256 passwords |
 
-> HTTPS is not handled by this repo — configure TLS at your reverse proxy (e.g. Let's Encrypt via Certbot or Caddy).
+> HTTPS: run `setup-https.sh` once on the server (Let's Encrypt, webroot challenge, daily renewal).
 
 ---
 

@@ -12,10 +12,14 @@ COPY frontend/package.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm install
 COPY frontend/ .
-RUN npm run build
+# No sourcemaps in the production image (they would expose the full source)
+RUN GENERATE_SOURCEMAP=false npm run build
 
 # ── Stage 2: All-in-one runtime (postgres + nginx + uvicorn + telegram bot) ────
-FROM python:3.11-slim
+# Pinned Debian release: it decides the PostgreSQL major version (trixie → 17).
+# Changing it means a new Postgres major, and the existing data volume won't
+# start without a pg_dump/restore — upgrade deliberately, never by accident.
+FROM python:3.11-slim-trixie
 
 # Tell Qt/OpenCV to render offscreen — prevents "libxcb" errors in headless Docker.
 ENV QT_QPA_PLATFORM=offscreen \
@@ -54,16 +58,22 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY telegram-bot/ /telegram-bot/
 
 # ── Config files ───────────────────────────────────────────────────────────────
-COPY nginx/nginx.combined.conf /etc/nginx/sites-available/default
+COPY nginx/nginx.combined.conf      /etc/nginx/smartbudget-http.conf
+COPY nginx/nginx.combined-tls.conf  /etc/nginx/smartbudget-tls.conf.template
+COPY nginx/smartbudget-common.conf  /etc/nginx/smartbudget-common.conf
 COPY supervisord.conf          /etc/supervisor/conf.d/supervisord.conf
 COPY wait-for-postgres.sh      /wait-for-postgres.sh
 COPY docker-entrypoint.sh      /docker-entrypoint.sh
 COPY start-telegram-bot.sh     /start-telegram-bot.sh
 COPY scripts/                  /scripts/
 
-RUN chmod +x /wait-for-postgres.sh /docker-entrypoint.sh /start-telegram-bot.sh \
+# Unprivileged user for uvicorn + the Telegram bot (the bot parses untrusted PDFs).
+# Only supervisord, the nginx master and postgres (as "postgres") run privileged.
+RUN useradd --system --create-home --home-dir /home/app --shell /usr/sbin/nologin app \
+ && chmod +x /wait-for-postgres.sh /docker-entrypoint.sh /start-telegram-bot.sh \
              /scripts/backup.sh /scripts/run-backup-cron.sh \
- && mkdir -p /var/log/supervisor /uploads /var/backups/smartbudget
+ && mkdir -p /var/log/supervisor /uploads /var/backups/smartbudget /var/www/certbot /home/app/.cache \
+ && chown -R app:app /uploads /home/app
 
-EXPOSE 80
+EXPOSE 80 443
 CMD ["/docker-entrypoint.sh"]

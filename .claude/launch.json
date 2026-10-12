@@ -5,6 +5,8 @@
       "name": "smartbudget-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
+      "cwd": "frontend",
+      "env": { "BROWSER": "none" },
       "port": 3000,
       "autoPort": false
     }

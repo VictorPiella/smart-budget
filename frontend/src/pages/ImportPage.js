@@ -65,7 +65,11 @@ function ImportResult({ result, onReset, resetLabel = "Import another file" }) {
 }
 
 // ── Today's date in YYYY-MM-DD
-const todayIso = () => new Date().toISOString().split("T")[0];
+// Local date, not UTC: toISOString() returns yesterday shortly after midnight in UTC+1/+2.
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 export default function ImportPage() {
   const { accounts, selectedAccount, setSelectedAccount, fetchAccounts, fetchUnmappedCount } = useAccounts();

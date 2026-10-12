@@ -1,253 +1,110 @@
 #!/usr/bin/env bash
 # setup-https.sh — one-time HTTPS / Let's Encrypt setup for SmartBudget on a VPS.
 #
-# USAGE (run on the VPS host, not inside Docker):
-#   chmod +x setup-https.sh
-#   sudo ./setup-https.sh budget.piella.me your-email@example.com
+# USAGE (run on the VPS host, in the directory holding docker-compose.prod.yml):
+#   sudo ./setup-https.sh budget.example.com you@example.com
 #
-# What it does:
-#   1. Installs certbot (if needed)
-#   2. Stops the running container briefly to free port 80
-#   3. Obtains a Let's Encrypt certificate via the standalone challenge
-#   4. Starts the container again
-#   5. Copies the new nginx.combined.conf with HTTPS enabled into the container
-#   6. Reloads nginx inside the container
-#   7. Installs a cron job for automatic renewal (runs twice a day)
-#
-# After first run:
-#   - HTTP automatically redirects to HTTPS
-#   - HSTS header is active (1-year max-age)
-#   - Certificates auto-renew before expiry
+# How it works (nothing is copied *into* the container, so deploys can't undo it):
+#   - Certificates live in ./letsencrypt on the host, mounted read-only into
+#     the container (docker-compose.prod.yml).
+#   - Challenges use certbot --webroot via ./certbot-www, which the container's
+#     nginx serves at /.well-known/acme-challenge/ — the app never stops.
+#   - On start, docker-entrypoint.sh enables the HTTPS nginx config when
+#     ./letsencrypt/live/$DOMAIN exists and DOMAIN is set in .env.
+#   - Renewal: a daily cron runs `certbot renew`; nginx is reloaded only when a
+#     certificate actually changed (--deploy-hook).
 
 set -euo pipefail
 
 DOMAIN="${1:-}"
 EMAIL="${2:-}"
-CONTAINER="${3:-smartbudget}"   # docker container name (default: smartbudget)
-CERT_DIR="/etc/letsencrypt/live/${DOMAIN}"
+COMPOSE_FILE="docker-compose.prod.yml"
+CONTAINER="budget_app"
+BASE_DIR="$(pwd)"
+LE_DIR="${BASE_DIR}/letsencrypt"
+WEBROOT="${BASE_DIR}/certbot-www"
 
-# ── 0. Validate args ──────────────────────────────────────────────────────────
 if [[ -z "${DOMAIN}" || -z "${EMAIL}" ]]; then
-  echo "Usage: sudo $0 <domain> <email> [container-name]"
-  echo "  e.g. sudo $0 budget.piella.me admin@piella.me smartbudget"
+  echo "Usage: sudo $0 <domain> <email>"
   exit 1
 fi
-
+if [[ ! "${DOMAIN}" =~ ^[A-Za-z0-9.-]+$ ]]; then
+  echo "ERROR: invalid domain '${DOMAIN}'"
+  exit 1
+fi
 if [[ "${EUID}" -ne 0 ]]; then
   echo "ERROR: This script must be run as root (sudo)."
   exit 1
 fi
+if [[ ! -f "${COMPOSE_FILE}" ]]; then
+  echo "ERROR: run this from the directory containing ${COMPOSE_FILE}."
+  exit 1
+fi
 
-echo "=== SmartBudget HTTPS setup ==="
-echo "  Domain    : ${DOMAIN}"
-echo "  Email     : ${EMAIL}"
-echo "  Container : ${CONTAINER}"
-echo ""
+echo "=== SmartBudget HTTPS setup — ${DOMAIN} ==="
 
-# ── 1. Install certbot ────────────────────────────────────────────────────────
+# ── 1. certbot ────────────────────────────────────────────────────────────────
 if ! command -v certbot &>/dev/null; then
-  echo "[1/7] Installing certbot..."
+  echo "[1/5] Installing certbot..."
   apt-get update -qq
   apt-get install -y --no-install-recommends certbot
 else
-  echo "[1/7] certbot already installed ($(certbot --version 2>&1 | head -1))"
+  echo "[1/5] certbot already installed."
 fi
 
-# ── 2. Stop container to free port 80 ────────────────────────────────────────
-echo "[2/7] Stopping container '${CONTAINER}' to free port 80..."
-docker stop "${CONTAINER}" || true
-
-# ── 3. Obtain certificate ─────────────────────────────────────────────────────
-if [[ -d "${CERT_DIR}" ]]; then
-  echo "[3/7] Certificate for ${DOMAIN} already exists — skipping issuance."
+# ── 2. DOMAIN in .env ─────────────────────────────────────────────────────────
+touch .env
+if grep -q '^DOMAIN=' .env; then
+  sed -i "s|^DOMAIN=.*|DOMAIN=${DOMAIN}|" .env
 else
-  echo "[3/7] Requesting certificate for ${DOMAIN}..."
+  echo "DOMAIN=${DOMAIN}" >> .env
+fi
+echo "[2/5] DOMAIN=${DOMAIN} written to .env"
+
+# ── 3. Make sure the container is up (serving HTTP + ACME webroot) ────────────
+mkdir -p "${LE_DIR}" "${WEBROOT}"
+echo "[3/5] Starting / updating the container..."
+docker compose -f "${COMPOSE_FILE}" up -d
+sleep 5
+
+# ── 4. Obtain the certificate (webroot: no downtime) ──────────────────────────
+if [[ -f "${LE_DIR}/live/${DOMAIN}/fullchain.pem" ]]; then
+  echo "[4/5] Certificate for ${DOMAIN} already exists — skipping issuance."
+else
+  echo "[4/5] Requesting certificate..."
   certbot certonly \
-    --standalone \
-    --non-interactive \
-    --agree-tos \
+    --webroot -w "${WEBROOT}" \
+    --config-dir "${LE_DIR}" \
+    --work-dir "${BASE_DIR}/.certbot-work" \
+    --logs-dir "${BASE_DIR}/.certbot-logs" \
+    --non-interactive --agree-tos \
     --email "${EMAIL}" \
     -d "${DOMAIN}"
 fi
 
-# ── 4. Restart container ──────────────────────────────────────────────────────
-echo "[4/7] Starting container '${CONTAINER}'..."
-docker start "${CONTAINER}"
-# Give nginx a moment to start before we reload it
-sleep 3
+# Restart so the entrypoint switches nginx to the HTTPS config
+docker compose -f "${COMPOSE_FILE}" up -d --force-recreate
+echo "[4/5] Container recreated with HTTPS enabled."
 
-# ── 5. Write the HTTPS nginx config into the container ───────────────────────
-echo "[5/7] Installing HTTPS nginx config into container..."
-
-# We write the new config to a temp file, then docker cp it in.
-TMP_CONF=$(mktemp /tmp/nginx-https-XXXX.conf)
-cat > "${TMP_CONF}" <<NGINX
-# HTTPS configuration — generated by setup-https.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ)
-# To regenerate: sudo ./setup-https.sh ${DOMAIN} ${EMAIL} ${CONTAINER}
-
-# HTTP → HTTPS redirect
-server {
-    listen 80;
-    server_name ${DOMAIN};
-    return 301 https://\$host\$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name ${DOMAIN};
-
-    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-    ssl_session_cache   shared:SSL:10m;
-    ssl_session_timeout 10m;
-
-    # ── Security headers ────────────────────────────────────────────────────
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Frame-Options           "DENY"                                always;
-    add_header X-Content-Type-Options    "nosniff"                             always;
-    add_header X-XSS-Protection          "1; mode=block"                       always;
-    add_header Referrer-Policy           "strict-origin-when-cross-origin"     always;
-    add_header Permissions-Policy        "geolocation=(), microphone=()"       always;
-
-    # ── Upload size limit ──────────────────────────────────────────────────
-    client_max_body_size 20m;
-
-    root /usr/share/nginx/html;
-    index index.html;
-
-    # Serve React SPA — fallback to index.html for client-side routing
-    location / {
-        try_files \$uri \$uri/ /index.html;
-    }
-
-    # Proxy API calls to uvicorn running on localhost
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_read_timeout 60s;
-    }
-}
-NGINX
-
-# Mount the cert directory and copy the new config
-docker cp "${TMP_CONF}" "${CONTAINER}:/etc/nginx/sites-available/default"
-rm -f "${TMP_CONF}"
-
-# Also mount the cert files into the container permanently by updating docker-compose.
-# Find the compose file location.
-COMPOSE_FILE=""
-for f in docker-compose.yml docker-compose.prod.yml; do
-  if [[ -f "${f}" ]]; then COMPOSE_FILE="${f}"; break; fi
-done
-
-# Mount /etc/letsencrypt into the container so certs persist across restarts.
-if [[ -n "${COMPOSE_FILE}" ]] && ! grep -q "letsencrypt" "${COMPOSE_FILE}"; then
-  echo "[5/7] Adding /etc/letsencrypt volume mount to ${COMPOSE_FILE}..."
-  # Insert the volume mount after the existing volumes section if present,
-  # otherwise append. Using python for reliable YAML editing.
-  python3 - "${COMPOSE_FILE}" <<'PYEOF'
-import sys, re
-
-path = sys.argv[1]
-text = open(path).read()
-
-# Find the backend/app service volumes block and add the cert mount.
-# Simple approach: look for "      volumes:" under the main service and append.
-mount_line = "      - /etc/letsencrypt:/etc/letsencrypt:ro\n"
-if mount_line.strip() in text:
-    print("  (already present)")
-    sys.exit(0)
-
-# Find the last volume line in the service to append after it
-lines = text.splitlines(keepends=True)
-out = []
-in_volumes = False
-inserted = False
-for line in lines:
-    out.append(line)
-    if not inserted and re.match(r'\s+volumes:', line):
-        in_volumes = True
-    elif in_volumes and not inserted and re.match(r'\s+- ', line):
-        pass  # keep looking for last volume entry
-    elif in_volumes and not inserted and not re.match(r'\s+- ', line):
-        # insert before this non-volume line
-        out.insert(-1, mount_line)
-        in_volumes = False
-        inserted = True
-
-if not inserted:
-    out.append(mount_line)
-
-open(path, 'w').write(''.join(out))
-print("  Done.")
-PYEOF
-fi
-
-# ── 6. Reload nginx inside the container ────────────────────────────────────
-echo "[6/7] Also copying letsencrypt certs into container and reloading nginx..."
-
-# Copy cert dir into container (needed each renewal; the cron handles this)
-docker exec "${CONTAINER}" mkdir -p "/etc/letsencrypt/live/${DOMAIN}"
-docker cp "${CERT_DIR}/fullchain.pem" "${CONTAINER}:/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
-docker cp "${CERT_DIR}/privkey.pem"   "${CONTAINER}:/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
-
-# Also expose 443 — remind the user to check docker-compose ports
-echo ""
-echo "  NOTE: Ensure your docker-compose maps port 443 to the host:"
-echo "    ports:"
-echo "      - \"80:80\""
-echo "      - \"443:443\""
-echo ""
-
-docker exec "${CONTAINER}" nginx -t && docker exec "${CONTAINER}" nginx -s reload
-echo "[6/7] nginx reloaded with HTTPS config."
-
-# ── 7. Install renewal cron ───────────────────────────────────────────────────
-echo "[7/7] Installing auto-renewal cron job..."
-
+# ── 5. Renewal cron ───────────────────────────────────────────────────────────
 RENEW_SCRIPT=/usr/local/sbin/smartbudget-renew-cert.sh
 cat > "${RENEW_SCRIPT}" <<RENEW
 #!/usr/bin/env bash
-# Auto-renewal script for SmartBudget SSL certificate.
+# Generated by setup-https.sh — renews the SmartBudget certificate if due.
 set -euo pipefail
-CONTAINER=${CONTAINER}
-DOMAIN=${DOMAIN}
-
-# Stop container to free port 80 for standalone renewal
-docker stop "\${CONTAINER}" || true
-certbot renew --standalone --quiet
-docker start "\${CONTAINER}"
-sleep 5
-
-# Push renewed certs into the container
-docker exec "\${CONTAINER}" mkdir -p "/etc/letsencrypt/live/\${DOMAIN}"
-docker cp "/etc/letsencrypt/live/\${DOMAIN}/fullchain.pem" "\${CONTAINER}:/etc/letsencrypt/live/\${DOMAIN}/fullchain.pem"
-docker cp "/etc/letsencrypt/live/\${DOMAIN}/privkey.pem"   "\${CONTAINER}:/etc/letsencrypt/live/\${DOMAIN}/privkey.pem"
-docker exec "\${CONTAINER}" nginx -s reload
-echo "[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] cert renewal complete"
+certbot renew --quiet \\
+  --config-dir "${LE_DIR}" \\
+  --work-dir "${BASE_DIR}/.certbot-work" \\
+  --logs-dir "${BASE_DIR}/.certbot-logs" \\
+  --deploy-hook "docker exec ${CONTAINER} nginx -s reload"
 RENEW
 chmod +x "${RENEW_SCRIPT}"
 
-# Add cron entry (runs at 03:30 and 15:30 — certbot only renews if <30 days left)
-CRON_LINE="30 3,15 * * * root ${RENEW_SCRIPT} >> /var/log/smartbudget-cert-renew.log 2>&1"
-if ! grep -q "smartbudget-renew-cert" /etc/crontab 2>/dev/null; then
-  echo "${CRON_LINE}" >> /etc/crontab
-  echo "[7/7] Cron job added to /etc/crontab."
-else
-  echo "[7/7] Cron job already present in /etc/crontab."
-fi
+# Replace any cron entry from older versions of this script (which stopped the container)
+sed -i '/smartbudget-renew-cert/d' /etc/crontab
+echo "17 3 * * * root ${RENEW_SCRIPT} >> /var/log/smartbudget-cert-renew.log 2>&1" >> /etc/crontab
+echo "[5/5] Daily renewal cron installed (03:17; nginx reloads only when renewed)."
 
 echo ""
-echo "=== HTTPS setup complete! ==="
-echo ""
-echo "  https://${DOMAIN} is now live."
-echo "  HTTP automatically redirects to HTTPS."
-echo "  HSTS header active (max-age=1 year)."
-echo "  Certificates auto-renew via /etc/crontab."
-echo ""
-echo "  Verify headers: curl -I https://${DOMAIN}/"
-echo ""
+echo "=== Done: https://${DOMAIN} ==="
+echo "  Verify: curl -I https://${DOMAIN}/"
